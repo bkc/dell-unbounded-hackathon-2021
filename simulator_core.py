@@ -33,10 +33,10 @@ class SortingCenter:
     # travel_time is in minutes
     PATH_FROM = {
         "intake": [
-            {
-                "next": "intake",
-                "travel_time": random.randint(2, 5) * SECONDS_PER_MINUTE,
-            },
+            # {
+            #     "next": "intake",
+            #     "travel_time": random.randint(2, 5) * SECONDS_PER_MINUTE,
+            # },
             {
                 "next": "weighing",
                 "travel_time": random.randint(2, 5) * SECONDS_PER_MINUTE,
@@ -51,10 +51,10 @@ class SortingCenter:
             },
         ],
         "receiving": [
-            {
-                "next": "receiving",
-                "travel_time": random.randint(2, 5) * SECONDS_PER_MINUTE,
-            },
+            # {
+            #     "next": "receiving",
+            #     "travel_time": random.randint(2, 5) * SECONDS_PER_MINUTE,
+            # },
             {
                 "next": "pre-routing",
                 "travel_time": random.randint(2, 5) * SECONDS_PER_MINUTE,
@@ -71,6 +71,7 @@ class SortingCenter:
                 "next": "output",
                 "travel_time": random.randint(5, 15) * SECONDS_PER_MINUTE,
             },
+            {"next": None, "travel_time": 0,},
         ],
         "holding": [
             {
@@ -185,6 +186,8 @@ class Simulator:
                 )
             elif current_scanner == "weighing":
                 result["weight"] = random.randint(1, 40)
+            elif not result["next_scanner_id"]:
+                del result["next_event_time"]
             yield result
             # set time for next actual scan, must always be less than
             # expected scan time
@@ -212,12 +215,12 @@ class Simulator:
         # add truck travel time
         event_time += truck_travel_time * SECONDS_PER_MINUTE
 
-        #        current_scanner = "intake"
+        current_scanner = "receiving"
         for path_info in self.sorting_centers[destination].package_path(
             origin, destination
         ):
             next_event_time = event_time + path_info["travel_time"]
-            yield {
+            result = {
                 "sorting_center": destination,
                 "event_time": event_time,
                 "package_id": package_id,
@@ -225,6 +228,11 @@ class Simulator:
                 "next_scanner_id": path_info["next"],
                 "next_event_time": next_event_time,
             }
+            if not result["next_scanner_id"]:
+                del result["next_event_time"]
+                del result["next_scanner_id"]
+
+            yield result
             # set time for next actual scan, must always be less than
             # expected scan time
             event_time = next_event_time - random.randint(0, SECONDS_PER_MINUTE)
