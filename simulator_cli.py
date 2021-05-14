@@ -5,7 +5,7 @@
 import sys
 import argparse
 import time
-import logging
+import json
 
 from util import setup_logging, add_logging_argument
 
@@ -49,6 +49,14 @@ def get_argument_parser():
         default=False,
     )
 
+    parser.add_argument(
+        "-j",
+        "--json_output",
+        help="output json",
+        action="store_true",
+        default=False,
+    )
+
     return parser
 
 
@@ -68,7 +76,10 @@ def main():
             simulated_start_time=int(time.time()),
         )
         for event in simulator.event_source():
-            logging.info("%r", event)
+            if args.json_output:
+                sys.stdout.write("%s\n" % json.dumps(event))
+            else:
+                print("%r" % event)
 
     else:
         parser.print_help()

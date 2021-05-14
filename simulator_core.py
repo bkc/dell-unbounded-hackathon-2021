@@ -188,6 +188,7 @@ class Simulator:
                 result["weight"] = random.randint(1, 40)
             elif not result["next_scanner_id"]:
                 del result["next_event_time"]
+                del result["next_scanner_id"]
             yield result
             # set time for next actual scan, must always be less than
             # expected scan time
