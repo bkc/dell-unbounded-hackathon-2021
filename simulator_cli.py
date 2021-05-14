@@ -18,19 +18,20 @@ def get_argument_parser():
 
     parser.add_argument(
         "-s",
-        "--simulated_time",
+        "--simulated_run_time",
         type=int,
         default=1440,
-        help="total simulated time period in minutes (real-world time, e.g. 1440 = 1 day)",
+        help="total simulated running time (minutes, real-world time, e.g. 1440 = 1 day)",
     )
 
     parser.add_argument(
-        "-r",
-        "--runtime",
+        "-i",
+        "--intake_run_time",
         type=int,
-        default=60,
-        help="actual simulation runtime in seconds",
+        default=300,
+        help="total simulated running time to intake packages (minutes)",
     )
+
 
     parser.add_argument(
         "-p",
@@ -62,8 +63,8 @@ def main():
     if args.test_simulator:
         # read the scope/stream from uri
         simulator = Simulator(
-            simulated_time=args.simulated_time,
-            runtime=args.runtime,
+            simulated_run_time=args.simulated_run_time,
+            intake_run_time=args.intake_run_time,
             package_count=args.package_count,
             simulated_start_time=int(time.time()),
         )

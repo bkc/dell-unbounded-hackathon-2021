@@ -1,6 +1,7 @@
 """simulator_core - generates package barcode scan events"""
 import time
 import random
+import logging
 
 SORTING_CENTER_NAMES = "ABCD"
 SECONDS_PER_MINUTE = 60
@@ -114,31 +115,38 @@ class Simulator:
     """
 
     def __init__(
-        self, simulated_time=1440, runtime=300, package_count=10, simulated_start_time=0
+        self, simulated_run_time=1440, intake_run_time=300, package_count=10, simulated_start_time=0
     ):
         if not simulated_start_time:
-            simulated_start_time = int(time.time())
+            simulated_start_time = int(time.time())            
         self.simulated_start_time = simulated_start_time
-        self.simulated_time = simulated_time
-        self.runtime = runtime
-        self.simulated_runtime_ratio = float(simulated_time) / float(runtime)
+        self.simulated_end_time = simulated_run_time * SECONDS_PER_MINUTE + self.simulated_start_time
+        self.seconds_per_package = float(intake_run_time * SECONDS_PER_MINUTE) / package_count # time between package creation events
         self.package_count = package_count
-        self.packages_per_second = (
-            float(package_count) / runtime
-        )  # how many packages must be created per second
-
+        logging.debug("start_time %r end_time %r duration %r package_count %r seconds_per_package %r", 
+            self.simulated_start_time,
+            self.simulated_end_time,
+            self.simulated_end_time - self.simulated_start_time,
+            self.package_count,
+            self.seconds_per_package,
+        )
         self.sorting_centers = {_: SortingCenter(name=_) for _ in SORTING_CENTER_NAMES}
 
     def event_source(self):
         """yield barcode scanning events for packages"""
         # initial naive approach is to generate all events for each package
-        # individually, sort all events, then emit them
-        for event in self.package_lifecycle(
-            simulated_start_time=self.simulated_start_time, package_id=1
-        ):
-            yield event
+        # individually, sort all events, then inject them into Pravega
 
-    def package_lifecycle(self, simulated_start_time, package_id):
+        # generated packages need to be spread out over the simulated run time
+        event_time = self.simulated_start_time
+        for package_id in range(1, self.package_count+1):
+            for event in self.package_lifecycle(
+                event_time=event_time, package_id=package_id
+            ):
+                yield event
+            event_time += self.seconds_per_package
+
+    def package_lifecycle(self, event_time, package_id):
         """generate lifecycle of one package"""
         origin = random.choice(SORTING_CENTER_NAMES)
         destination = random.choice(SORTING_CENTER_NAMES)
@@ -147,10 +155,10 @@ class Simulator:
         for path_info in self.sorting_centers[origin].package_path(
             origin, destination
         ):
-            next_event_time = simulated_start_time + path_info["travel_time"]
+            next_event_time = event_time + path_info["travel_time"]
             yield {
                 "sorting_center": origin,
-                "event_time": simulated_start_time,
+                "event_time": event_time,
                 "package_id": package_id,
                 "scanner_id": current_scanner,
                 "next_scanner_id": path_info["next"],
@@ -158,10 +166,13 @@ class Simulator:
             }
             # set time for next actual scan, must always be less than
             # expected scan time
-            simulated_start_time = next_event_time - random.randint(
+            event_time = next_event_time - random.randint(
                 0,
                 SECONDS_PER_MINUTE
             )
+            if event_time >= self.simulated_end_time:
+                return
+
             current_scanner = path_info["next"]
 
         truck_travel_time = TRUCK_TRAVEL_TIMES[(origin, destination)]
@@ -175,21 +186,21 @@ class Simulator:
         # time, so we do need to calculate "top of the hour"
 
         # get current hour
-        whole, _ = divmod(simulated_start_time, SECONDS_PER_HOUR)
+        whole, _ = divmod(event_time, SECONDS_PER_HOUR)
 
         # top of 'next hour'
-        simulated_start_time = SECONDS_PER_HOUR * (whole + 1)
+        event_time = SECONDS_PER_HOUR * (whole + 1)
         # add truck travel time
-        simulated_start_time += truck_travel_time * SECONDS_PER_MINUTE
+        event_time += truck_travel_time * SECONDS_PER_MINUTE
 
 #        current_scanner = "intake"
         for path_info in self.sorting_centers[destination].package_path(
             origin, destination
         ):
-            next_event_time = simulated_start_time + path_info["travel_time"]
+            next_event_time = event_time + path_info["travel_time"]
             yield {
                 "sorting_center": destination,
-                "event_time": simulated_start_time,
+                "event_time": event_time,
                 "package_id": package_id,
                 "scanner_id": current_scanner,
                 "next_scanner_id": path_info["next"],
@@ -197,8 +208,11 @@ class Simulator:
             }
             # set time for next actual scan, must always be less than
             # expected scan time
-            simulated_start_time = next_event_time - random.randint(
+            event_time = next_event_time - random.randint(
                 0,
                 SECONDS_PER_MINUTE
             )
+            if event_time >= self.simulated_end_time:
+                return
+
             current_scanner = path_info["next"]
