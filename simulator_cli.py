@@ -32,7 +32,6 @@ def get_argument_parser():
         help="total simulated running time to intake packages (minutes)",
     )
 
-
     parser.add_argument(
         "-p",
         "--package_count",

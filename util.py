@@ -1,7 +1,6 @@
 import logging
 
 
-
 def add_logging_argument(parser):
     valid_log_levels = ("info", "warn", "debug", "error", "fatal", "critical")
 
@@ -32,4 +31,3 @@ def setup_logging(options):
     root_logger.addHandler(ch)
 
     return log_level
-

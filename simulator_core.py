@@ -80,6 +80,11 @@ class SortingCenter:
         ],
     }
 
+    INTAKE_TIME = sum(_["travel_time"] for _ in PATH_FROM["intake"])
+    RECEIVING_TIME = sum(_["travel_time"] for _ in PATH_FROM["receiving"])
+    OUTPUT_TIME = sum(_["travel_time"] for _ in PATH_TO["output"])
+    HOLDING_TIME = sum(_["travel_time"] for _ in PATH_TO["holding"])
+
     def __init__(self, name="A"):
         self.name = name
 
@@ -100,6 +105,7 @@ class SortingCenter:
 
                 yield path_info
 
+
 class Simulator:
     """package barcode scan simulator
 
@@ -115,15 +121,24 @@ class Simulator:
     """
 
     def __init__(
-        self, simulated_run_time=1440, intake_run_time=300, package_count=10, simulated_start_time=0
+        self,
+        simulated_run_time=1440,
+        intake_run_time=300,
+        package_count=10,
+        simulated_start_time=0,
     ):
         if not simulated_start_time:
-            simulated_start_time = int(time.time())            
+            simulated_start_time = int(time.time())
         self.simulated_start_time = simulated_start_time
-        self.simulated_end_time = simulated_run_time * SECONDS_PER_MINUTE + self.simulated_start_time
-        self.seconds_per_package = float(intake_run_time * SECONDS_PER_MINUTE) / package_count # time between package creation events
+        self.simulated_end_time = (
+            simulated_run_time * SECONDS_PER_MINUTE + self.simulated_start_time
+        )
+        self.seconds_per_package = (
+            float(intake_run_time * SECONDS_PER_MINUTE) / package_count
+        )  # time between package creation events
         self.package_count = package_count
-        logging.debug("start_time %r end_time %r duration %r package_count %r seconds_per_package %r", 
+        logging.debug(
+            "start_time %r end_time %r duration %r package_count %r seconds_per_package %r",
             self.simulated_start_time,
             self.simulated_end_time,
             self.simulated_end_time - self.simulated_start_time,
@@ -138,10 +153,10 @@ class Simulator:
         # individually, sort all events, then inject them into Pravega
 
         # generated packages need to be spread out over the simulated run time
-        event_time = self.simulated_start_time
-        for package_id in range(1, self.package_count+1):
+        event_time = float(self.simulated_start_time)
+        for package_id in range(1, self.package_count + 1):
             for event in self.package_lifecycle(
-                event_time=event_time, package_id=package_id
+                event_time=event_time, package_id=str(package_id)
             ):
                 yield event
             event_time += self.seconds_per_package
@@ -152,11 +167,9 @@ class Simulator:
         destination = random.choice(SORTING_CENTER_NAMES)
 
         current_scanner = "intake"
-        for path_info in self.sorting_centers[origin].package_path(
-            origin, destination
-        ):
+        for path_info in self.sorting_centers[origin].package_path(origin, destination):
             next_event_time = event_time + path_info["travel_time"]
-            yield {
+            result = {
                 "sorting_center": origin,
                 "event_time": event_time,
                 "package_id": package_id,
@@ -164,19 +177,25 @@ class Simulator:
                 "next_scanner_id": path_info["next"],
                 "next_event_time": next_event_time,
             }
+            if current_scanner == "intake":
+                result["declared_value"] = random.randint(10, 100)
+                result["destination"] = destination
+                result["estimated_delivery_time"] = (
+                    self.get_travel_time(origin, destination) + event_time
+                )
+            elif current_scanner == "weighing":
+                result["weight"] = random.randint(1, 40)
+            yield result
             # set time for next actual scan, must always be less than
             # expected scan time
-            event_time = next_event_time - random.randint(
-                0,
-                SECONDS_PER_MINUTE
-            )
+            event_time = next_event_time - random.randint(0, SECONDS_PER_MINUTE)
             if event_time >= self.simulated_end_time:
                 return
 
             current_scanner = path_info["next"]
 
         truck_travel_time = TRUCK_TRAVEL_TIMES[(origin, destination)]
-        if not truck_travel_time :
+        if not truck_travel_time:
             # package is delivered, no further routing is needed
             return
 
@@ -193,7 +212,7 @@ class Simulator:
         # add truck travel time
         event_time += truck_travel_time * SECONDS_PER_MINUTE
 
-#        current_scanner = "intake"
+        #        current_scanner = "intake"
         for path_info in self.sorting_centers[destination].package_path(
             origin, destination
         ):
@@ -208,11 +227,32 @@ class Simulator:
             }
             # set time for next actual scan, must always be less than
             # expected scan time
-            event_time = next_event_time - random.randint(
-                0,
-                SECONDS_PER_MINUTE
-            )
+            event_time = next_event_time - random.randint(0, SECONDS_PER_MINUTE)
             if event_time >= self.simulated_end_time:
                 return
 
             current_scanner = path_info["next"]
+
+    def get_travel_time(self, origin, destination):
+        """return total estimated travel time"""
+        origin_sorting_center = self.sorting_centers[origin]
+        destination_sorting_center = self.sorting_centers[destination]
+        if origin is destination:
+            travel_time = (
+                origin_sorting_center.INTAKE_TIME + origin_sorting_center.OUTPUT_TIME
+            )
+        else:
+            travel_time = (
+                origin_sorting_center.INTAKE_TIME
+                + origin_sorting_center.HOLDING_TIME
+                + destination_sorting_center.RECEIVING_TIME
+                + destination_sorting_center.OUTPUT_TIME
+                + TRUCK_TRAVEL_TIMES[(origin, destination)] * SECONDS_PER_MINUTE
+            )
+            # round up to the next hour to account for loading time on truck
+            whole, _ = divmod(travel_time, SECONDS_PER_HOUR)
+
+            travel_time = SECONDS_PER_HOUR * (whole + 1)
+
+        # and for just to be safe, add another 30 minutes
+        return travel_time + SECONDS_PER_MINUTE * 30
