@@ -143,7 +143,7 @@ Example: intake 1000 packages in 8 simulated hours, then continue generating eve
 
 
 ```shell
-$ python simulator_cli.py -t --package_count 1000 --intake_run_time 480 --simulated_run_time 8640 --delay 20 --lost 5 -j | jq -sc 'sort_by(.event_time)[]'  > /tmp/events.json
+$ python simulator_cli.py -t --package_count 1000 --intake_run_time 480 --simulated_run_time 10080 --delay 20 --lost 5 -j | jq -sc 'sort_by(.event_time)[]'  > /tmp/events.json
 ```
 
 The jq tool is used to sort and ensure the generated output is one complete json object per text line
