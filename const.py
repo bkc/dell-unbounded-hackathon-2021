@@ -6,10 +6,10 @@ REDIS_PACKAGE_NEXT_EVENT_KEY_NAME = "next_package_event"
 
 PUBLIC_SCANNER_EVENTS = (
     "intake",
-    "holding A",
-    "holding B",
-    "holding C",
-    "holding D",
+    "holding_A",
+    "holding_B",
+    "holding_C",
+    "holding_D",
     "receiving",
     "output",
 )  # these are public tracking events
