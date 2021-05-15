@@ -20,6 +20,10 @@ from io.pravega.client.stream import StreamConfiguration
 from io.pravega.client.stream import EventStreamWriter
 from io.pravega.client.stream import EventWriterConfig
 
+from io.pravega.client.admin import KeyValueTableManager
+from io.pravega.client.tables import KeyValueTableClientConfiguration, KeyValueTableConfiguration
+from io.pravega.client import KeyValueTableFactory
+
 
 @contextlib.contextmanager
 def streamManager(uri):
@@ -112,3 +116,55 @@ def eventWriter(clientFactory, stream_name, serializer):
     finally:
         if event_writer:
             event_writer.close()
+
+
+@contextlib.contextmanager
+def keyValueTableManager(uri):
+    """create a kvt table manager"""
+    key_value_table_manager = None
+    try:
+        key_value_table_manager = KeyValueTableManager.create(URI(uri))
+        yield key_value_table_manager
+    finally:
+        if key_value_table_manager:
+            key_value_table_manager.close()
+
+
+def keyValueTableConfiguration(partition_count=1):
+    """return a kvt configuration"""
+    key_value_table_configuration = KeyValueTableConfiguration.builder()
+    if partition_count:
+        key_value_table_configuration.partitionCount(partition_count)
+
+    return key_value_table_configuration.build()
+
+
+@contextlib.contextmanager
+def keyValueTableFactory(uri, scope):
+    """create a KeyValueTableFactory"""
+    kvt_factory = None
+    try:
+        kvt_factory = KeyValueTableFactory.withScope(
+            scope, ClientConfig.builder().controllerURI(URI(uri)).build()
+        )
+        yield kvt_factory
+    finally:
+        if kvt_factory:
+            kvt_factory.close()
+
+
+@contextlib.contextmanager
+def keyValueTable(kvt_factory, table_name, key_serializer, value_serializer):
+    """create a kvt"""
+    kvt_table = None
+    try:
+        kvt_table = kvt_factory.forKeyValueTable(
+            table_name,
+            key_serializer,
+            value_serializer,
+            KeyValueTableClientConfiguration.builder().build(),
+        )
+        yield kvt_table
+    finally:
+        if kvt_table:
+            kvt_table.close()
