@@ -193,3 +193,11 @@ read the value back
 
 
 
+# Dependencies
+
+These java dependencies are required
+
+* https://github.com/redis/jedis - specifically https://repo1.maven.org/maven2/redis/clients/jedis/3.6.0/jedis-3.6.0.jar
+* Pravega Client jar files for 0.9
+
+

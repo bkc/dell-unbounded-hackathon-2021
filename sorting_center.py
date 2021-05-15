@@ -28,8 +28,14 @@ from pravega_interface import (
     keyValueTableManager,
 )
 
+from redis_util import add_redis_argparse_argument, get_redis_server_from_options
+
 from util import setup_logging, add_logging_argument
-from const import SORTING_CENTER_CODES, SORTING_CENTER_TO_STREAM_NAME
+from const import (
+    SORTING_CENTER_CODES,
+    SORTING_CENTER_TO_STREAM_NAME,
+    REDIS_PACKAGE_ATTRIBUTES_KEY_NAME,
+)
 
 READ_TIMEOUT = 2000
 
@@ -118,7 +124,7 @@ def iterable_stream(uri, scope, stream_name, serializer, reader_name=None):
             yield event
 
 
-def process_sorting_center_events(uri, scope, sorting_center_code):
+def process_sorting_center_events(uri, scope, sorting_center_code, redis=None):
     """process events from stream"""
     serializer = JavaSerializer()
     with streamManager(uri=uri) as stream_manager:
@@ -126,10 +132,13 @@ def process_sorting_center_events(uri, scope, sorting_center_code):
         input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
         logging.debug("begin reading from stream %r", input_stream_name)
         input_event_stream = iterable_stream(uri, scope, input_stream_name, serializer)
-        pipeline = record_intake_and_weight(
-            input_event_stream=save_streamcut_timestamps(input_event_stream),
-            uri=uri,
-            scope=scope,
+        pipeline = update_next_event_time(
+            input_event_stream=record_intake_and_weight(
+                input_event_stream=save_streamcut_timestamps(input_event_stream),
+                uri=uri,
+                scope=scope,
+            ),
+            redis=redis,
         )
 
         # read each scan event
@@ -143,6 +152,28 @@ def process_sorting_center_events(uri, scope, sorting_center_code):
         for _ in itertools.izip(range(10), pipeline):
             logging.debug("%r", _)
     return 0
+
+
+def update_next_event_time(input_event_stream, redis=None):
+    """save next expected event time into redis"""
+    if not redis:
+        for event in input_event_stream:
+            # yield from not supported in jython
+            yield event
+        return
+
+    for event in input_event_stream:
+        package_id = event["package_id"]
+        next_event_time = event["next_event_time"]
+
+        if next_event_time:
+            # insert member with next_event_time as score
+            redis.zadd(REDIS_PACKAGE_ATTRIBUTES_KEY_NAME, next_event_time, package_id)
+        else:
+            # remove member
+            redis.zrem(REDIS_PACKAGE_ATTRIBUTES_KEY_NAME, package_id)
+
+        yield event
 
 
 def save_streamcut_timestamps(input_event_stream):
@@ -272,13 +303,18 @@ def main():
     """main"""
     parser = get_argument_parser()
     add_logging_argument(parser)
+    add_redis_argparse_argument(parser)
     args = parser.parse_args()
     setup_logging(args)
 
     if all((args.sorting_center_code, args.scope, args.uri, args.run)):
         # run the sorting center process
+        redis = get_redis_server_from_options(args)
         return process_sorting_center_events(
-            uri=args.uri, scope=args.scope, sorting_center_code=args.sorting_center_code
+            uri=args.uri,
+            scope=args.scope,
+            sorting_center_code=args.sorting_center_code,
+            redis=redis,
         )
     elif all((args.sorting_center_code, args.scope, args.uri, args.package_id)):
         # test retrieving events for a single package
