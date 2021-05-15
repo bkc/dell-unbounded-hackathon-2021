@@ -34,13 +34,13 @@ from util import setup_logging, add_logging_argument
 from const import (
     SORTING_CENTER_CODES,
     SORTING_CENTER_TO_STREAM_NAME,
-    REDIS_PACKAGE_ATTRIBUTES_KEY_NAME,
+    REDIS_PACKAGE_NEXT_EVENT_KEY_NAME,
     PACKAGE_ATTRIBUTES_KVT_NAME,
     PACKAGE_EVENTS_KVT_NAME,
     PUBLIC_SCANNER_EVENTS,
 )
 
-READ_TIMEOUT = 2000
+READ_TIMEOUT = 500
 
 cgitb.enable(format="text")
 
@@ -122,12 +122,13 @@ def iterable_stream(uri, scope, stream_name, serializer, reader_name=None):
                     continue
                 else:
                     # nothing left to read
+                    logging.debug("all events have been read")
                     return
 
             yield event
 
 
-def process_sorting_center_events(uri, scope, sorting_center_code, redis=None):
+def process_sorting_center_events(uri, scope, sorting_center_code, redis=None, maximum_event_count=None):
     """process events from stream"""
     serializer = JavaSerializer()
     with streamManager(uri=uri) as stream_manager:
@@ -156,8 +157,15 @@ def process_sorting_center_events(uri, scope, sorting_center_code, redis=None):
         # if its weighing scanner - update central service kvt, add weight
         # if its intake, holding, receiving or outlet - add event to package specific stream
 
-        for _ in itertools.izip(range(10), pipeline):
-            logging.debug("%r", _)
+        if maximum_event_count:
+            for _ in itertools.izip(range(10), pipeline):
+                logging.debug("%r", _)
+        else:
+            # process all events by completely consuming the generator
+            for idx, _ in enumerate(pipeline):
+                if idx and not (idx % 100):
+                    logging.debug("event # %d", idx)
+                
     return 0
 
 
@@ -171,14 +179,14 @@ def update_next_event_time(input_event_stream, redis=None):
 
     for event in input_event_stream:
         package_id = event["package_id"]
-        next_event_time = event["next_event_time"]
+        next_event_time = event.get("next_event_time")
 
         if next_event_time:
             # insert member with next_event_time as score
-            redis.zadd(REDIS_PACKAGE_ATTRIBUTES_KEY_NAME, next_event_time, package_id)
+            redis.zadd(REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, next_event_time, package_id)
         else:
             # remove member
-            redis.zrem(REDIS_PACKAGE_ATTRIBUTES_KEY_NAME, package_id)
+            redis.zrem(REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, package_id)
 
         yield event
 
@@ -340,6 +348,15 @@ def get_argument_parser():
     )
 
     parser.add_argument(
+        "-m",
+        "--maximum_event_count",
+        type=int,
+        help="maximum number of events to process (for testing)",
+        default=None,
+    )
+  
+
+    parser.add_argument(
         "-r",
         "--run",
         help="run sorting center process",
@@ -365,6 +382,7 @@ def main():
             scope=args.scope,
             sorting_center_code=args.sorting_center_code,
             redis=redis,
+            maximum_event_count=args.maximum_event_count,
         )
     elif all((args.sorting_center_code, args.scope, args.uri, args.package_id)):
         # test retrieving events for a single package
