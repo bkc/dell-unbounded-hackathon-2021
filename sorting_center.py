@@ -35,6 +35,9 @@ from const import (
     SORTING_CENTER_CODES,
     SORTING_CENTER_TO_STREAM_NAME,
     REDIS_PACKAGE_ATTRIBUTES_KEY_NAME,
+    PACKAGE_ATTRIBUTES_KVT_NAME,
+    PACKAGE_EVENTS_KVT_NAME,
+    PUBLIC_SCANNER_EVENTS,
 )
 
 READ_TIMEOUT = 2000
@@ -133,8 +136,12 @@ def process_sorting_center_events(uri, scope, sorting_center_code, redis=None):
         logging.debug("begin reading from stream %r", input_stream_name)
         input_event_stream = iterable_stream(uri, scope, input_stream_name, serializer)
         pipeline = update_next_event_time(
-            input_event_stream=record_intake_and_weight(
-                input_event_stream=save_streamcut_timestamps(input_event_stream),
+            input_event_stream=record_public_tracking_events(
+                input_event_stream=record_intake_and_weight(
+                    input_event_stream=save_streamcut_timestamps(input_event_stream),
+                    uri=uri,
+                    scope=scope,
+                ),
                 uri=uri,
                 scope=scope,
             ),
@@ -194,7 +201,7 @@ def save_streamcut_timestamps(input_event_stream):
 def record_intake_and_weight(input_event_stream, uri, scope):
     """save attributes about the package in kvt table that is shared between sorting centers"""
     serializer = UTF8StringSerializer()  # cannot get kvt to work with JavaSerializer
-    kvt_table_name = "package-attributes"
+    kvt_table_name = PACKAGE_ATTRIBUTES_KVT_NAME
     with keyValueTableManager(uri) as kvt_manager:
         key_value_table_configuration = keyValueTableConfiguration()
         created = kvt_manager.createKeyValueTable(
@@ -232,6 +239,49 @@ def record_intake_and_weight(input_event_stream, uri, scope):
                         ]
 
                     kvt_table.put(None, package_id, json.dumps(value_data)).join()
+                    yield event
+
+
+def record_public_tracking_events(input_event_stream, uri, scope):
+    """save public package events in kvt table that is shared between sorting centers"""
+    # used to show public tracking results to customer
+    serializer = UTF8StringSerializer()  # cannot get kvt to work with JavaSerializer
+    kvt_table_name = PACKAGE_EVENTS_KVT_NAME
+    with keyValueTableManager(uri) as kvt_manager:
+        key_value_table_configuration = keyValueTableConfiguration()
+        created = kvt_manager.createKeyValueTable(
+            scope, kvt_table_name, key_value_table_configuration
+        )
+        logging.debug(
+            "kvt table %s/%s %s",
+            scope,
+            kvt_table_name,
+            "created" if created else "already exists",
+        )
+        with keyValueTableFactory(uri, scope) as kvt_factory:
+            with keyValueTable(
+                kvt_factory, kvt_table_name, serializer, serializer
+            ) as kvt_table:
+                for event in input_event_stream:
+                    scanner_id = event["scanner_id"]
+                    if scanner_id not in PUBLIC_SCANNER_EVENTS:
+                        yield event
+                        continue
+
+                    # need to update or create kvt entry
+                    package_id = event["package_id"]
+                    event_time = event["event_time"]
+                    kvt_entry = kvt_table.get(None, package_id).join()
+                    value_data = json.loads(kvt_entry.getValue()) if kvt_entry else []
+                    event_times = [_['event_time'] for _ in value_data]
+                    if event_time not in event_times:
+                        # add this event to list
+                        value_data.append({
+                            "event_time": event_time,
+                            "sorting_center": event["sorting_center"],
+                            "scanner_id": event["scanner_id"],
+                        })
+                        kvt_table.put(None, package_id, json.dumps(value_data)).join()
                     yield event
 
 

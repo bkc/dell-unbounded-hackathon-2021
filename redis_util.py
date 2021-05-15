@@ -2,6 +2,7 @@ import sys
 
 if "java" in sys.platform:
     from redis.clients.jedis import Jedis
+
     is_java = True
 else:
     from redis import Redis
