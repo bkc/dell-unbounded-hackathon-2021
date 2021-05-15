@@ -205,16 +205,16 @@ class Simulator:
             next_event_time = event_time + path_info["travel_time"]
             result = {
                 "sorting_center": origin,
-                "event_time": event_time,
+                "event_time": int(event_time),
                 "package_id": package_id,
                 "scanner_id": current_scanner,
                 "next_scanner_id": path_info["next"],
-                "next_event_time": next_event_time,
+                "next_event_time": int(next_event_time),
             }
             if current_scanner == "intake":
                 result["declared_value"] = random.randint(10, 100)
                 result["destination"] = destination
-                result["estimated_delivery_time"] = (
+                result["estimated_delivery_time"] = int(
                     self.get_travel_time(origin, destination) + event_time
                 )
             elif current_scanner == "weighing":
@@ -236,6 +236,7 @@ class Simulator:
             # package is delivered, no further routing is needed
             return
 
+
         # the truck to the next sorting center will be loaded at the top of the hour
         # there's no scan event for that, but that's when the truck will leave
         # for now, we do want all packages on this truck to arrive at the same
@@ -245,10 +246,23 @@ class Simulator:
         whole, _ = divmod(event_time, SECONDS_PER_HOUR)
 
         # top of 'next hour'
-        event_time = SECONDS_PER_HOUR * (whole + 1)
+        receiving_event_time = SECONDS_PER_HOUR * (whole + 1)
         # add truck travel time
-        event_time += truck_travel_time * SECONDS_PER_MINUTE
+        receiving_event_time += truck_travel_time * SECONDS_PER_MINUTE
 
+        # emit arriving at holding 
+        result = {
+            "sorting_center": origin,
+            "event_time": int(event_time),
+            "package_id": package_id,
+            "scanner_id": current_scanner,
+            "next_scanner_id": "receiving",
+            "next_event_time": int(receiving_event_time),
+        }
+
+        yield result
+
+        event_time = receiving_event_time
         current_scanner = "receiving"
         for path_info in self.sorting_centers[destination].package_path(
             origin, destination
@@ -256,11 +270,11 @@ class Simulator:
             next_event_time = event_time + path_info["travel_time"]
             result = {
                 "sorting_center": destination,
-                "event_time": event_time,
+                "event_time": int(event_time),
                 "package_id": package_id,
                 "scanner_id": current_scanner,
                 "next_scanner_id": path_info["next"],
-                "next_event_time": next_event_time,
+                "next_event_time": int(next_event_time),
             }
             if not result["next_scanner_id"]:
                 del result["next_event_time"]
