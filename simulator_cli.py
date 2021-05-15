@@ -1,6 +1,8 @@
 """simulator_cli - command line interface to test and operate simulator code"""
 # to facilitate testing on cpython because its faster than jython
 # also, not using virtualenv because jython support is poor
+# in the future, this cli could be changed to inject events directly into Pravega
+# by using some clever in-memory sorting of event streams.
 
 import sys
 import argparse
@@ -41,6 +43,22 @@ def get_argument_parser():
     )
 
     parser.add_argument(
+        "-d",
+        "--delayed_package_count",
+        type=int,
+        default=0,
+        help="total number of packages to be delayed",
+    )
+
+    parser.add_argument(
+        "--lost_package_count",
+        type=int,
+        default=0,
+        help="total number of packages to be lost enroute (must be less than delayed_package_count)",
+    )
+
+
+    parser.add_argument(
         "-t",
         "--test",
         dest="test_simulator",
@@ -74,6 +92,8 @@ def main():
             intake_run_time=args.intake_run_time,
             package_count=args.package_count,
             simulated_start_time=int(time.time()),
+            lost_package_count=args.lost_package_count,
+            delayed_package_count=args.delayed_package_count,
         )
         for event in simulator.event_source():
             if args.json_output:
