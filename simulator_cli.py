@@ -57,7 +57,6 @@ def get_argument_parser():
         help="total number of packages to be lost enroute (must be less than delayed_package_count)",
     )
 
-
     parser.add_argument(
         "-t",
         "--test",
@@ -68,11 +67,7 @@ def get_argument_parser():
     )
 
     parser.add_argument(
-        "-j",
-        "--json_output",
-        help="output json",
-        action="store_true",
-        default=False,
+        "-j", "--json_output", help="output json", action="store_true", default=False,
     )
 
     return parser
