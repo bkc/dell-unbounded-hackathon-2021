@@ -143,6 +143,16 @@ Example: intake 1000 packages in 8 simulated hours, then continue generating eve
 
 
 ```shell
-$ python simulator_cli.py -t --package_count 1000 --intake_run_time 480 --simulated_run_time 8640 --delay 20 --lost 5 --json | jq -s 'sort_by(.event_time)' > /tmp/events.json
+$ python simulator_cli.py -t --package_count 1000 --intake_run_time 480 --simulated_run_time 8640 --delay 20 --lost 5 -j | jq -sc 'sort_by(.event_time)[]'  > /tmp/events.json
 ```
+
+The jq tool is used to sort and ensure the generated output is one complete json object per text line
+
+```json
+{"estimated_delivery_time":1621138133,"event_time":1621046333,"next_scanner_id":"weighing","scanner_id":"intake","next_event_time":1621046573,"destination":"C","declared_value":38,"package_id":"1","sorting_center":"B"}
+{"estimated_delivery_time":1621138161.8,"event_time":1621046361.8,"next_scanner_id":"weighing","scanner_id":"intake","next_event_time":1621046601.8,"destination":"A","declared_value":73,"package_id":"2","sorting_center":"B"}
+{"estimated_delivery_time":1621483790.6,"event_time":1621046390.6,"next_scanner_id":"weighing","scanner_id":"intake","next_event_time":1621046630.6,"destination":"C","declared_value":46,"package_id":"3","sorting_center":"D"}
+{"estimated_delivery_time":1621138219.3999999,"event_time":1621046419.3999999,"next_scanner_id":"weighing","scanner_id":"intake","next_event_time":1621046659.3999999,"destination":"C","declared_value":32,"package_id":"4","sorting_center":"B"}
+```
+
 
