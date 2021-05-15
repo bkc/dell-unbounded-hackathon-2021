@@ -55,7 +55,7 @@ def get_argument_parser():
 
 
 def read_or_write_kvt(uri, scope, table_name, key_name, value=missing):
-    #key_serializer = JavaSerializer() # this doesn't work, raises java.io.StreamCorruptedException:
+    # key_serializer = JavaSerializer() # this doesn't work, raises java.io.StreamCorruptedException:
     key_serializer = UTF8StringSerializer()
     # value_serializer = JavaSerializer() # this doesn't work
     value_serializer = UTF8StringSerializer()
@@ -64,7 +64,12 @@ def read_or_write_kvt(uri, scope, table_name, key_name, value=missing):
         created = kvt_manager.createKeyValueTable(
             scope, table_name, key_value_table_configuration
         )
-        logging.debug("kvt table %s/%s %s", scope, table_name, "created" if created else "already exists")
+        logging.debug(
+            "kvt table %s/%s %s",
+            scope,
+            table_name,
+            "created" if created else "already exists",
+        )
         with keyValueTableFactory(uri, scope) as kvt_factory:
             with keyValueTable(
                 kvt_factory, table_name, key_serializer, value_serializer

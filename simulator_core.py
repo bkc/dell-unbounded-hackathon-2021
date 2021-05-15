@@ -3,7 +3,9 @@ import time
 import random
 import logging
 
-SORTING_CENTER_NAMES = "ABCD"
+from const import SORTING_CENTER_CODES
+
+
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600
 
@@ -148,7 +150,7 @@ class Simulator:
             self.package_count,
             self.seconds_per_package,
         )
-        self.sorting_centers = {_: SortingCenter(name=_) for _ in SORTING_CENTER_NAMES}
+        self.sorting_centers = {_: SortingCenter(name=_) for _ in SORTING_CENTER_CODES}
         self.lost_or_delayed_package_map = self.generate_lost_or_delayed_packages(
             package_count=package_count,
             lost_package_count=lost_package_count,
@@ -195,24 +197,24 @@ class Simulator:
 
     def package_lifecycle(self, event_time, package_id):
         """generate lifecycle of one package"""
-        origin = random.choice(SORTING_CENTER_NAMES)
-        destination = random.choice(SORTING_CENTER_NAMES)
+        origin = random.choice(SORTING_CENTER_CODES)
+        destination = random.choice(SORTING_CENTER_CODES)
 
         current_scanner = "intake"
         for path_info in self.sorting_centers[origin].package_path(origin, destination):
             next_event_time = event_time + path_info["travel_time"]
             result = {
                 "sorting_center": origin,
-                "event_time": event_time,
+                "event_time": int(event_time),
                 "package_id": package_id,
                 "scanner_id": current_scanner,
                 "next_scanner_id": path_info["next"],
-                "next_event_time": next_event_time,
+                "next_event_time": int(next_event_time),
             }
             if current_scanner == "intake":
                 result["declared_value"] = random.randint(10, 100)
                 result["destination"] = destination
-                result["estimated_delivery_time"] = (
+                result["estimated_delivery_time"] = int(
                     self.get_travel_time(origin, destination) + event_time
                 )
             elif current_scanner == "weighing":
@@ -243,10 +245,23 @@ class Simulator:
         whole, _ = divmod(event_time, SECONDS_PER_HOUR)
 
         # top of 'next hour'
-        event_time = SECONDS_PER_HOUR * (whole + 1)
+        receiving_event_time = SECONDS_PER_HOUR * (whole + 1)
         # add truck travel time
-        event_time += truck_travel_time * SECONDS_PER_MINUTE
+        receiving_event_time += truck_travel_time * SECONDS_PER_MINUTE
 
+        # emit arriving at holding
+        result = {
+            "sorting_center": origin,
+            "event_time": int(event_time),
+            "package_id": package_id,
+            "scanner_id": current_scanner,
+            "next_scanner_id": "receiving",
+            "next_event_time": int(receiving_event_time),
+        }
+
+        yield result
+
+        event_time = receiving_event_time
         current_scanner = "receiving"
         for path_info in self.sorting_centers[destination].package_path(
             origin, destination
@@ -254,11 +269,11 @@ class Simulator:
             next_event_time = event_time + path_info["travel_time"]
             result = {
                 "sorting_center": destination,
-                "event_time": event_time,
+                "event_time": int(event_time),
                 "package_id": package_id,
                 "scanner_id": current_scanner,
                 "next_scanner_id": path_info["next"],
-                "next_event_time": next_event_time,
+                "next_event_time": int(next_event_time),
             }
             if not result["next_scanner_id"]:
                 del result["next_event_time"]

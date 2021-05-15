@@ -16,8 +16,8 @@ from pravega_interface import (
 )
 
 from util import setup_logging, add_logging_argument
+from const import SORTING_CENTER_TO_STREAM_NAME
 
-SORTING_CENTER_TO_STREAM_NAME = {_: "sorting-center-input-%s" % _ for _ in "ABCD"}
 
 cgitb.enable(format="text")
 

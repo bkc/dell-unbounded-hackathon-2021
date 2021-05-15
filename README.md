@@ -166,3 +166,38 @@ $ time env CLASSPATH=/home/bkc/src/3rdParty/pravega-client-0.9.0/\* jython impor
 
 Note that jython takes a while to start. 
 
+
+# Debugging and testing tools
+
+Resources that were used during development and investigation of Pravega
+
+## kvt_test
+
+The `tools/kvt_test.py` module provides a cli for testing table creation, insertion and retrieval of a key and value.
+
+### write a value
+
+```shell
+$ env CLASSPATH=/path-to-client-jars/pravega-client-0.9.0/\* jython kvt_test.py -l debug -u tcp://192.162.108.4:9090 --scope test --table_name test --key test --value 1
+```
+
+Writes both key and value as strings. Unfortunately I could not get this to work using JavaSerializer for either key or value
+
+```shell
+$ env CLASSPATH=/path-to-client-jars/pravega-client-0.9.0/\* jython kvt_test.py -l debug -u tcp://192.162.108.4:9090 --scope test --table_name test --key test 
+2021-05-15 11:34:59,822 root         DEBUG    kvt table test/test already exists
+u'1'
+```
+
+read the value back
+
+
+
+# Dependencies
+
+These java dependencies are required
+
+* https://github.com/redis/jedis - specifically https://repo1.maven.org/maven2/redis/clients/jedis/3.6.0/jedis-3.6.0.jar
+* Pravega Client jar files for 0.9
+
+
