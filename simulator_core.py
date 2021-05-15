@@ -236,7 +236,6 @@ class Simulator:
             # package is delivered, no further routing is needed
             return
 
-
         # the truck to the next sorting center will be loaded at the top of the hour
         # there's no scan event for that, but that's when the truck will leave
         # for now, we do want all packages on this truck to arrive at the same
@@ -250,7 +249,7 @@ class Simulator:
         # add truck travel time
         receiving_event_time += truck_travel_time * SECONDS_PER_MINUTE
 
-        # emit arriving at holding 
+        # emit arriving at holding
         result = {
             "sorting_center": origin,
             "event_time": int(event_time),

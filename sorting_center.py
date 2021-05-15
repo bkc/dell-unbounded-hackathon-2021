@@ -11,6 +11,7 @@ import itertools
 import uuid
 
 from io.pravega.client.stream.impl import JavaSerializer
+from io.pravega.client.stream.impl import UTF8StringSerializer
 from io.pravega.client.stream import Stream
 
 from pravega_interface import (
@@ -21,6 +22,10 @@ from pravega_interface import (
     readerGroupManager,
     readerGroup,
     Reader,
+    keyValueTable,
+    keyValueTableFactory,
+    keyValueTableConfiguration,
+    keyValueTableManager,
 )
 
 from util import setup_logging, add_logging_argument
@@ -110,7 +115,7 @@ def iterable_stream(uri, scope, stream_name, serializer, reader_name=None):
                     # nothing left to read
                     return
 
-            yield event_read
+            yield event
 
 
 def process_sorting_center_events(uri, scope, sorting_center_code):
@@ -121,7 +126,11 @@ def process_sorting_center_events(uri, scope, sorting_center_code):
         input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
         logging.debug("begin reading from stream %r", input_stream_name)
         input_event_stream = iterable_stream(uri, scope, input_stream_name, serializer)
-        pipeline = save_streamcut_timestamps(input_event_stream)
+        pipeline = record_intake_and_weight(
+            input_event_stream=save_streamcut_timestamps(input_event_stream),
+            uri=uri,
+            scope=scope,
+        )
 
         # read each scan event
         # write hourly window times back to sorting-center specific timestamp stream
@@ -138,8 +147,7 @@ def process_sorting_center_events(uri, scope, sorting_center_code):
 
 def save_streamcut_timestamps(input_event_stream):
     """save streamcuts every hour somewhere so we can rewind the stream"""
-    # to make it more efficient to extract events for a specific package_id
-    # for when we want to extract the tracking details on a package
+    # to make it more efficient to extract events for a specific package_id in the future
     # we can rewind to the probable location of the first tracking event
     # then read forward.
     # due to short-time on the hackathon, I'm not going to actually implement this
@@ -147,14 +155,63 @@ def save_streamcut_timestamps(input_event_stream):
     # reader_group.generateStreamCuts  We can then save the streamCut by serializing it
     # posting back to another stream or kvt or wherever.
     for event_read in input_event_stream:
-        # logging.debug("%r %r", currentTimeWindow, event_read)
+        # when event time rolls over to the 'next' hour
+        # create a StreamCut and save it for future use
         yield event_read
+
+
+def record_intake_and_weight(input_event_stream, uri, scope):
+    """save attributes about the package in kvt table that is shared between sorting centers"""
+    serializer = UTF8StringSerializer()  # cannot get kvt to work with JavaSerializer
+    kvt_table_name = "package-attributes"
+    with keyValueTableManager(uri) as kvt_manager:
+        key_value_table_configuration = keyValueTableConfiguration()
+        created = kvt_manager.createKeyValueTable(
+            scope, kvt_table_name, key_value_table_configuration
+        )
+        logging.debug(
+            "kvt table %s/%s %s",
+            scope,
+            kvt_table_name,
+            "created" if created else "already exists",
+        )
+        with keyValueTableFactory(uri, scope) as kvt_factory:
+            with keyValueTable(
+                kvt_factory, kvt_table_name, serializer, serializer
+            ) as kvt_table:
+                for event in input_event_stream:
+                    scanner_id = event["scanner_id"]
+                    if scanner_id not in ("intake", "weighing"):
+                        yield event
+                        continue
+
+                    # need to update or create kvt entry
+                    package_id = event["package_id"]
+                    kvt_entry = kvt_table.get(None, package_id).join()
+                    value_data = json.loads(kvt_entry.getValue()) if kvt_entry else {}
+                    if scanner_id == "weighing":
+                        value_data["weight"] = event["weight"]
+                    else:
+                        value_data["intake_time"] = event["event_time"]
+                        value_data["destination"] = event["destination"]
+                        value_data["origin"] = event["sorting_center"]
+                        value_data["declared_value"] = event["declared_value"]
+                        value_data["estimated_delivery_time"] = event[
+                            "estimated_delivery_time"
+                        ]
+
+                    kvt_table.put(None, package_id, json.dumps(value_data)).join()
+                    yield event
 
 
 def extract_sorting_center_events_by_package_id(
     uri, scope, sorting_center_code, package_id
 ):
     """yield events for only this package_id"""
+    # if we were saving StreamCuts, then we could look up the package_id from master kvt to
+    # find initial import timestamp for this sorting center, then configure
+    # this ReaderGroup to start at that StreamCut
+
     serializer = JavaSerializer()
     with streamManager(uri=uri) as stream_manager:
         # input stream must already exist
@@ -163,15 +220,17 @@ def extract_sorting_center_events_by_package_id(
         input_event_stream = iterable_stream(uri, scope, input_stream_name, serializer)
         for event in filter_events_by_package_id(input_event_stream, package_id):
             yield event
+            if event.get("scanner_id") == "output":
+                # just to speed it up
+                break
 
 
 def filter_events_by_package_id(input_stream, package_id):
     """yield events for the requested package_id"""
-    for read_event in input_stream:
-        event = read_event.getEvent()
+    for event in input_stream:
         if event.get("package_id") != package_id:
             continue
-        yield read_event
+        yield event
 
 
 def get_argument_parser():
@@ -229,7 +288,7 @@ def main():
             sorting_center_code=args.sorting_center_code,
             package_id=args.package_id,
         ):
-            print("%r" % event.getEvent())
+            print("%r" % event)
 
     else:
         parser.print_help()
