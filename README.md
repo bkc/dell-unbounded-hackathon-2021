@@ -91,6 +91,7 @@ The redis 'delivery' sorted set will indicate which packages were not delivered 
 When packages arrive in a holding area, they will be added to a per-truck stream. At the 'next hour' mark the stream will be closed. The count, weight and value will be calculated from all packages in that truck's stream
 
 
+TODO
 
 * Calculate the running average of package count and value per sorting center to determine liability insurance requirements and required staffing levels
 * Calculate the running average of lost or delayed packages by sorting center and by conveyor belt section
@@ -98,4 +99,50 @@ When packages arrive in a holding area, they will be added to a per-truck stream
 * Provide an internal facing package tracking interface that shows all package events for individual packages
 
 
+# Operation
+How to use this software to demonstrate Pravega functionality
+
+The first step is to generate a stream of simulated package tracking events to be written to Pravega streams.
+
+## Simulator CLI
+
+The simulator Cli is used to generate a stream of json events on stdout. These events  must be sorted on key `event_time` before ingesting into Pravega
+
+```shell
+usage: simulator_cli.py [-h] [-s SIMULATED_RUN_TIME] [-i INTAKE_RUN_TIME]
+                        [-p PACKAGE_COUNT] [-d DELAYED_PACKAGE_COUNT]
+                        [--lost_package_count LOST_PACKAGE_COUNT] [-t] [-j]
+                        [-l {info,warn,debug,error,fatal,critical}]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -s SIMULATED_RUN_TIME, --simulated_run_time SIMULATED_RUN_TIME
+                        total simulated running time (minutes, real-world
+                        time, e.g. 1440 = 1 day)
+  -i INTAKE_RUN_TIME, --intake_run_time INTAKE_RUN_TIME
+                        total simulated running time to intake packages
+                        (minutes)
+  -p PACKAGE_COUNT, --package_count PACKAGE_COUNT
+                        total number of packages to be simulated
+  -d DELAYED_PACKAGE_COUNT, --delayed_package_count DELAYED_PACKAGE_COUNT
+                        total number of packages to be delayed
+  --lost_package_count LOST_PACKAGE_COUNT
+                        total number of packages to be lost enroute (must be
+                        less than delayed_package_count)
+  -t, --test            run simulation test
+  -j, --json_output     output json
+  -l {info,warn,debug,error,fatal,critical}, --console_log_level {info,warn,debug,error,fatal,critical}
+                        set logging level for console output:
+                        info,warn,debug,error,fatal,critical
+```
+
+
+
+Example: intake 1000 packages in 8 simulated hours, then continue generating events for 6 days, delaying 20 packages. Of those 20 packages, 5 will be completely lost, write the sorted json stream to a file for later ingestion into Pravega
+
+
+
+```shell
+$ python simulator_cli.py -t --package_count 1000 --intake_run_time 480 --simulated_run_time 8640 --delay 20 --lost 5 --json | jq -s 'sort_by(.event_time)' > /tmp/events.json
+```
 
