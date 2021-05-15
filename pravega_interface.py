@@ -21,7 +21,10 @@ from io.pravega.client.stream import EventStreamWriter
 from io.pravega.client.stream import EventWriterConfig
 
 from io.pravega.client.admin import KeyValueTableManager
-from io.pravega.client.tables import KeyValueTableClientConfiguration, KeyValueTableConfiguration
+from io.pravega.client.tables import (
+    KeyValueTableClientConfiguration,
+    KeyValueTableConfiguration,
+)
 from io.pravega.client import KeyValueTableFactory
 
 

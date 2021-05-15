@@ -3,7 +3,9 @@ import time
 import random
 import logging
 
-SORTING_CENTER_NAMES = "ABCD"
+from const import SORTING_CENTER_CODES
+
+
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600
 
@@ -148,7 +150,7 @@ class Simulator:
             self.package_count,
             self.seconds_per_package,
         )
-        self.sorting_centers = {_: SortingCenter(name=_) for _ in SORTING_CENTER_NAMES}
+        self.sorting_centers = {_: SortingCenter(name=_) for _ in SORTING_CENTER_CODES}
         self.lost_or_delayed_package_map = self.generate_lost_or_delayed_packages(
             package_count=package_count,
             lost_package_count=lost_package_count,
@@ -195,8 +197,8 @@ class Simulator:
 
     def package_lifecycle(self, event_time, package_id):
         """generate lifecycle of one package"""
-        origin = random.choice(SORTING_CENTER_NAMES)
-        destination = random.choice(SORTING_CENTER_NAMES)
+        origin = random.choice(SORTING_CENTER_CODES)
+        destination = random.choice(SORTING_CENTER_CODES)
 
         current_scanner = "intake"
         for path_info in self.sorting_centers[origin].package_path(origin, destination):
