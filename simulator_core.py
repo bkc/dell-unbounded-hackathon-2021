@@ -149,7 +149,11 @@ class Simulator:
             self.seconds_per_package,
         )
         self.sorting_centers = {_: SortingCenter(name=_) for _ in SORTING_CENTER_NAMES}
-        self.lost_or_delayed_package_map = self.generate_lost_or_delayed_packages(package_count=package_count ,lost_package_count=lost_package_count, delayed_package_count=delayed_package_count)
+        self.lost_or_delayed_package_map = self.generate_lost_or_delayed_packages(
+            package_count=package_count,
+            lost_package_count=lost_package_count,
+            delayed_package_count=delayed_package_count,
+        )
 
     def event_source(self):
         """yield barcode scanning events for packages"""
@@ -159,18 +163,26 @@ class Simulator:
         # generated packages need to be spread out over the simulated run time
         event_time = float(self.simulated_start_time)
         for package_id in range(1, self.package_count + 1):
-            package_id= str(package_id)
+            package_id = str(package_id)
             lost_or_delay_info = self.lost_or_delayed_package_map.get(package_id)
             delay_offset = 0
-            for event_index, event in enumerate(self.package_lifecycle(
-                event_time=event_time, package_id=package_id
-            )):
+            for event_index, event in enumerate(
+                self.package_lifecycle(event_time=event_time, package_id=package_id)
+            ):
                 event["event_time"] += delay_offset
                 if "next_event_time" in event:
                     event["next_event_time"] += delay_offset
                 yield event
-                if lost_or_delay_info and lost_or_delay_info["event_index"] == event_index:
-                    logging.debug("delay or lose package_id %r before scanner_id %r type %r", package_id, event["next_scanner_id"], lost_or_delay_info["type"])
+                if (
+                    lost_or_delay_info
+                    and lost_or_delay_info["event_index"] == event_index
+                ):
+                    logging.debug(
+                        "delay or lose package_id %r before scanner_id %r type %r",
+                        package_id,
+                        event.get("next_scanner_id"),
+                        lost_or_delay_info["type"],
+                    )
                     # delay this package or lose it
                     if lost_or_delay_info["type"] == "lost":
                         # lose the package
@@ -285,19 +297,24 @@ class Simulator:
         # and for just to be safe, add another 30 minutes
         return travel_time + SECONDS_PER_MINUTE * 30
 
-
-    def generate_lost_or_delayed_packages(self, package_count,lost_package_count, delayed_package_count):
+    def generate_lost_or_delayed_packages(
+        self, package_count, lost_package_count, delayed_package_count
+    ):
         """randomly select packages to delayed or lost"""
-        result = {} # key is package_id, value is delay info
+        result = {}  # key is package_id, value is delay info
         assert lost_package_count <= delayed_package_count
         assert delayed_package_count < package_count
 
         # lost packages are selected from delayed packages
-        for idx, package_id in enumerate(random.sample(range(1, package_count), delayed_package_count)):
+        for idx, package_id in enumerate(
+            random.sample(range(1, package_count), delayed_package_count)
+        ):
             result[str(package_id)] = {
                 "type": "lost" if idx < lost_package_count else "delayed",
-                "delay": 2*SECONDS_PER_HOUR,
-                "event_index": random.choice((3,3,3,3,1,2,4)),    # lose or delay most of them in routing
+                "delay": 2 * SECONDS_PER_HOUR,
+                "event_index": random.choice(
+                    (3, 3, 3, 3, 1, 2, 4)
+                ),  # lose or delay most of them in routing
             }
         logging.debug("delay map %r", result)
         return result
