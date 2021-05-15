@@ -28,7 +28,7 @@ def import_events(uri, scope, input_file):
     with streamManager(uri=uri) as stream_manager, eventStreamClientFactory(
         uri, scope
     ) as event_stream_client_factory:
-        # ensure destination streams are written
+        # ensure destination streams have already been created
         create_streams(stream_manager, scope)
         # ugly python to get context manager to work properly
         # since contextlib.nested is deprecated
