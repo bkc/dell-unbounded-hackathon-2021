@@ -158,56 +158,74 @@ def process_sorting_center_events(
 ):
     """process events from stream"""
     serializer = JavaSerializer()
+    trouble_stream_name = TROUBLE_EVENT_STREAM_NAME
+    stream_configuration = streamConfiguration(scaling_policy=1)
     with streamManager(uri=uri) as stream_manager:
-        # input stream must already exist
-        input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
-        logger.debug("begin reading from stream %r", input_stream_name)
-        input_event_stream = iterable_stream(
-            uri, scope, input_stream_name, serializer, wait_for_events=wait_for_events
+        created = stream_manager.createStream(
+            scope, trouble_stream_name, stream_configuration
         )
-        # read each scan event
-        # write hourly window times back to sorting-center specific timestamp stream
-        # always update redis sorted set with next expected  event time
-        # detect packages that are late and report them to trouble stream
-        # if its from intake scanner - send package_id, destination, eta and value to central service via kvt
-        # if its from output scanner - mark package as delivered in kvt
-        # if its weighing scanner - update central service kvt, add weight
-        # if its intake, holding, receiving or outlet - add event to package specific stream
+        logger.debug(
+            "stream %s/%s %s",
+            scope,
+            trouble_stream_name,
+            "created" if created else "already exists",
+        )
+        with eventStreamClientFactory(
+            uri, scope
+        ) as event_stream_client_factory, eventWriter(
+            event_stream_client_factory, trouble_stream_name, serializer
+        ) as trouble_stream:
+            # input stream must already exist
+            input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
+            logger.debug("begin reading from stream %r", input_stream_name)
+            input_event_stream = iterable_stream(
+                uri,
+                scope,
+                input_stream_name,
+                serializer,
+                wait_for_events=wait_for_events,
+            )
+            # read each scan event
+            # write hourly window times back to sorting-center specific timestamp stream
+            # always update redis sorted set with next expected  event time
+            # detect packages that are late and report them to trouble stream
+            # if its from intake scanner - send package_id, destination, eta and value to central service via kvt
+            # if its from output scanner - mark package as delivered in kvt
+            # if its weighing scanner - update central service kvt, add weight
+            # if its intake, holding, receiving or outlet - add event to package specific stream
 
-        pipeline = detect_delayed_packages(
-            input_event_stream=update_next_event_time(
-                input_event_stream=record_public_tracking_events(
-                    input_event_stream=record_intake_and_weight_and_output(
-                        input_event_stream=save_streamcut_timestamps(
-                            input_event_stream
+            pipeline = detect_delayed_packages(
+                input_event_stream=update_next_event_time(
+                    input_event_stream=record_public_tracking_events(
+                        input_event_stream=record_intake_and_weight_and_output(
+                            input_event_stream=save_streamcut_timestamps(
+                                input_event_stream
+                            ),
+                            uri=uri,
+                            scope=scope,
                         ),
                         uri=uri,
                         scope=scope,
                     ),
-                    uri=uri,
-                    scope=scope,
+                    redis=redis,
                 ),
+                trouble_stream=trouble_stream,
                 redis=redis,
-            ),
-            stream_manager=stream_manager,
-            redis=redis,
-            uri=uri,
-            scope=scope,
-            sorting_center_code=sorting_center_code,
-        )
+                sorting_center_code=sorting_center_code,
+            )
 
-        if maximum_event_count:
-            for _ in itertools.izip(range(10), pipeline):
-                logger.debug("%r", _)
-        else:
-            # process all events by completely consuming the generator
-            for idx, _ in enumerate(pipeline):
-                if idx and not (idx % 100):
-                    logger.debug("event # %d", idx)
+            if maximum_event_count:
+                for _ in itertools.izip(range(10), pipeline):
+                    logger.debug("%r", _)
+            else:
+                # process all events by completely consuming the generator
+                for idx, _ in enumerate(pipeline):
+                    if idx and not (idx % 100):
+                        logger.debug("event # %d", idx)
 
     if redis:
         logger.debug("Lost packages: %r", redis.smembers(REDIS_LATE_PACKAGE_HASH_NAME))
-        
+
     return 0
 
 
@@ -236,42 +254,27 @@ def update_next_event_time(input_event_stream, redis=None):
 
 
 def detect_delayed_packages(
-    input_event_stream, stream_manager, redis, uri, scope, sorting_center_code
+    input_event_stream, trouble_stream, redis, sorting_center_code
 ):
     """check redis for delayed events, report them to another stream"""
-    serializer = JavaSerializer()
-    stream_configuration = streamConfiguration(scaling_policy=1)
-    stream_name = TROUBLE_EVENT_STREAM_NAME
-    created = stream_manager.createStream(scope, stream_name, stream_configuration)
-    logger.debug(
-        "stream %s/%s %s",
-        scope,
-        stream_name,
-        "created" if created else "already exists",
-    )
-
-    with eventStreamClientFactory(uri, scope) as event_stream_client_factory:
-        with eventWriter(
-            event_stream_client_factory, stream_name, serializer
-        ) as trouble_stream:
-            last_event_seconds = 0
-            for event in input_event_stream:
-                event_time = event["event_time"]
-                yield event
-                if not last_event_seconds:
-                    last_event_seconds = divmod(
-                        event_time, DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY
-                    )
-                else:
-                    if last_event_seconds != divmod(
-                        event_time, DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY
-                    ):
-                        last_event_seconds = divmod(
-                            event_time, DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY
-                        )
-                        report_delayed_packages(
-                            redis, trouble_stream, event_time, sorting_center_code
-                        )
+    last_event_seconds = 0
+    for event in input_event_stream:
+        event_time = event["event_time"]
+        yield event
+        if not last_event_seconds:
+            last_event_seconds = divmod(
+                event_time, DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY
+            )
+        else:
+            if last_event_seconds != divmod(
+                event_time, DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY
+            ):
+                last_event_seconds = divmod(
+                    event_time, DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY
+                )
+                report_delayed_packages(
+                    redis, trouble_stream, event_time, sorting_center_code
+                )
 
 
 def report_delayed_packages(redis, stream, event_time, sorting_center_code):
