@@ -2,12 +2,8 @@
 
 import sys
 import argparse
-import json
 import logging
-import cgitb
 
-from io.pravega.client.stream.impl import JavaSerializer
-from io.pravega.client.stream import NoSuchScopeException
 from java.util.concurrent import CompletionException
 
 from pravega_interface import (
@@ -53,19 +49,24 @@ def get_argument_parser():
 
 def purge_scope(uri, scope):
     """delete all kvt and streams in specified scope"""
-    with keyValueTableManager(uri) as kvt_manager:
-        for kvt_info in kvt_manager.listKeyValueTables(scope):
-            kvt_name = kvt_info.getKeyValueTableName()
-            logging.debug("deleting kvt %s/%s", scope, kvt_name)
-            kvt_manager.deleteKeyValueTable(scope, kvt_name)
+    try:
+        with keyValueTableManager(uri) as kvt_manager:
+            for kvt_info in kvt_manager.listKeyValueTables(scope):
+                kvt_name = kvt_info.getKeyValueTableName()
+                logging.debug("deleting kvt %s/%s", scope, kvt_name)
+                kvt_manager.deleteKeyValueTable(scope, kvt_name)
 
-    with streamManager(uri=uri) as stream_manager:
-        logging.debug("deleting scope %s", scope)
-        stream_manager.deleteScope(scope, True)
+        with streamManager(uri=uri) as stream_manager:
+            logging.debug("deleting scope %s", scope)
+            stream_manager.deleteScope(scope, True)
+    except CompletionException:
+        # looks like CompletionException contains NoSuchScopeException
+        # will have to figure out later how to directly catch NoSuchScopeException
+        pass
 
 def purge_redis(redis):
     """clear redis data structures"""
-    for redis_key_name in (REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, ):
+    for redis_key_name in (REDIS_PACKAGE_NEXT_EVENT_KEY_NAME,):
         redis.del(redis_key_name)
         logging.debug("deleted key %r from redis", redis_key_name)
 
@@ -80,13 +81,7 @@ def main():
 
     handled_params = False
     if all((args.purge_scope, args.uri, args.scope)):
-        try:
-            purge_scope(uri=args.uri, scope=args.scope)
-        except (NoSuchScopeException, CompletionException) as exc:
-            # looks like CompletionException contains NoSuchScopeException
-            # will have to figure out later how to catch NoSuchScopeException
-            pass
-
+        purge_scope(uri=args.uri, scope=args.scope)
         handled_params = True
         
     if args.purge_redis and args.redis_server:
