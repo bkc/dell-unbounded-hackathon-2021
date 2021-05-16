@@ -72,6 +72,10 @@ To simplify the development tasks for the hackathon we make the following assump
 
 Pravega is applied to solve SGFs package tracking problem
 
+## Problem detection method
+
+
+
 ### Detect when packages have fallen off a conveyor belt within a sorting center, so that they can be located and placed back into the package flow, Detect when packages are lost
 
 When packages are scanned, events are sent to the sorting center input stream with these elements:
@@ -99,7 +103,19 @@ Delayed and lost packages events are written to a 'trouble' stream from which a 
 
 The reporting interface demonstrates this for lost packages
 
-### Unimplemented or partially implemented features
+## Solution Architecture
+
+An overview of the solution architecture is shown below. 
+
+* Per-sorting center input streams receive events from barcode scanners placed at key locations in the facility. 
+* Per-sorting center processes read the tail of the input stream to detect various conditions are previously described
+* A Redis sorted set keeps track of next expected scanning event. 
+* When a scanning event is missed, a delivery is late or a package is lost, an event is written to the trouble stream
+* The Trouble Reporter process tails the trouble stream. It hydrates trouble events with additional information from the package attribute key-value table before passing the events on to users
+
+<img src="assets/sgf-arch-diagram.png" alt="sgf-arch-diagram" style="zoom:33%;" />
+
+## Unimplemented or partially implemented features
 
 * Calculate the count, total weight and total value of packages loaded on each truck - When packages arrive in a holding area, they can be added to a per-truck stream. At the 'next hour' mark the stream would be closed. The count, weight and value will be calculated from all packages in that truck's stream and a summary report can be written to another stream that tracks truck metrics
 * Calculate the running average of package count and value per sorting center to determine liability insurance requirements and required staffing levels
