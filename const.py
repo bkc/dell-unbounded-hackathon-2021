@@ -2,14 +2,14 @@ SORTING_CENTER_CODES = "ABCD"
 
 SORTING_CENTER_TO_STREAM_NAME = {_: "sorting-center-input-%s" % _ for _ in "ABCD"}
 
-REDIS_PACKAGE_ATTRIBUTES_KEY_NAME = "package_attributes"
+REDIS_PACKAGE_NEXT_EVENT_KEY_NAME = "next_package_event"
 
 PUBLIC_SCANNER_EVENTS = (
     "intake",
-    "holding A",
-    "holding B",
-    "holding C",
-    "holding D",
+    "holding_A",
+    "holding_B",
+    "holding_C",
+    "holding_D",
     "receiving",
     "output",
 )  # these are public tracking events
