@@ -1,6 +1,8 @@
+![sgf-logo](assets/sgf-logo2.png)
+
 # SGF - Speedy Goods Freight
 
-dell-unbounded-hackathon-2021
+dell-unbounded-hackathon-2021 project
 
 SGF is a parcel delivery service that prides itself on fast delivery with a money-back guarantee for late or lost packages. To meet SGF business goals they rely on an in-house package tracking system implemented by this project.
 
@@ -209,5 +211,4 @@ These java dependencies are required
 
 * https://github.com/redis/jedis - specifically https://repo1.maven.org/maven2/redis/clients/jedis/3.6.0/jedis-3.6.0.jar
 * Pravega Client jar files for 0.9
-
 

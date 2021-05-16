@@ -25,7 +25,8 @@ def setup_logging(options):
     ch = logging.StreamHandler()
     ch.setLevel(log_level)
     ch_formatter = logging.Formatter(
-        "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"
+        "%(asctime)s %(name)-12s %(levelname)-8s %(message)s",
+        "%H:%M:%S"
     )
     ch.setFormatter(ch_formatter)
     root_logger.addHandler(ch)

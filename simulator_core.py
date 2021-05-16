@@ -249,7 +249,7 @@ class Simulator:
         # add truck travel time
         receiving_event_time += truck_travel_time * SECONDS_PER_MINUTE
 
-        # emit arriving at holding
+        # emit arriving at holding area
         result = {
             "sorting_center": origin,
             "event_time": int(event_time),
@@ -257,6 +257,7 @@ class Simulator:
             "scanner_id": current_scanner,
             "next_scanner_id": "receiving",
             "next_event_time": int(receiving_event_time),
+            "next_sorting_center": destination,
         }
 
         yield result

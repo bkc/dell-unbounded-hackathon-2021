@@ -9,6 +9,7 @@ import itertools
 import uuid
 import operator
 import time
+import datetime
 
 from io.pravega.client.stream.impl import JavaSerializer
 from io.pravega.client.stream.impl import UTF8StringSerializer
@@ -42,6 +43,7 @@ from const import (
     TROUBLE_EVENT_STREAM_NAME,
     MINIMUM_LATE_PACKAGE_SECONDS,
     REDIS_LATE_PACKAGE_HASH_NAME,
+    REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME,
 )
 
 READ_TIMEOUT = 500
@@ -54,8 +56,6 @@ DEBUG_TIME_SYNC = False
 
 cgitb.enable(format="text")
 logger = None
-
-
 
 
 def iterable_stream(
@@ -135,7 +135,7 @@ def process_sorting_center_events(
             # if its from intake scanner - send package_id, destination, eta and value to central service via kvt
             # if its from output scanner - mark package as delivered in kvt
             # if its weighing scanner - update central service kvt, add weight
-            # if its intake, holding, receiving or outlet - add event to package specific stream
+            # if its intake, holding, receiving or outlet - add event to package specific stream TODO
 
             pipeline = detect_delayed_packages(
                 input_event_stream=update_next_event_time(
@@ -165,7 +165,11 @@ def process_sorting_center_events(
             else:
                 # process all events by completely consuming the generator
                 for idx, _ in enumerate(pipeline):
-                    if idx and mark_event_index_frequency and not (idx % mark_event_index_frequency):
+                    if (
+                        idx
+                        and mark_event_index_frequency
+                        and not (idx % mark_event_index_frequency)
+                    ):
                         logger.debug("event # %d", idx)
 
     if redis:
@@ -189,10 +193,24 @@ def update_next_event_time(input_event_stream, redis=None):
         if next_event_time:
             # insert member with next_event_time as score
             redis.zadd(REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, next_event_time, package_id)
+            if "next_scanner_id" in event:
+                redis.hset(
+                    REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME,
+                    package_id,
+                    "%s/%s"
+                    % (
+                        event.get("next_sorting_center", event["sorting_center"]),
+                        event["next_scanner_id"],
+                    ),
+                )
+            # remove this package_id from late package hash
             redis.srem(REDIS_LATE_PACKAGE_HASH_NAME, package_id)
         else:
-            # remove member
+            # remove from next events
             redis.zrem(REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, package_id)
+            # remove from next scanner id
+            redis.hdel(REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME, package_id)
+            # remove this package_id from late package hash
             redis.srem(REDIS_LATE_PACKAGE_HASH_NAME, package_id)
 
         yield event
@@ -251,22 +269,25 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
             time.sleep(SLEEP_PROCESS_TIME)
         event_time = int(earliest_event_time.score)
 
-    for late_package_info in list(
+    for delayed_package_info in list(
         redis.zrangeByScoreWithScores(REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, 0, event_time)
     ):
-        package_id = late_package_info.element
-        expected_event_time = int(late_package_info.score)
+        package_id = delayed_package_info.element
+        expected_event_time = int(delayed_package_info.score)
         if event_time - expected_event_time < MINIMUM_LATE_PACKAGE_SECONDS:
             # not actually late yet
             continue
 
         if redis.sadd(REDIS_LATE_PACKAGE_HASH_NAME, package_id):
+            next_scanner_id = (
+                redis.hget(REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME, package_id) or None
+            )
             logger.warn(
-                "delayed package %r expected_event_time %r current_time %r diff %r",
+                "delayed package %r expected %r late %r at %r",
                 package_id,
-                expected_event_time,
-                event_time,
-                event_time - expected_event_time,
+                datetime.datetime.fromtimestamp(expected_event_time).strftime("%m-%d %H:%M"),
+                datetime.timedelta(seconds=event_time - expected_event_time),
+                next_scanner_id,
             )
 
             # write to trouble stream
@@ -279,6 +300,7 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
                     "package_id": package_id,
                     "expected_event_time": expected_event_time,
                     "sorting_center": sorting_center_code,
+                    "next_scanner_id": next_scanner_id,
                 },
             )
             packages_to_remove.append(package_id)
@@ -363,11 +385,10 @@ def report_late_delivery(package_id, value_data, trouble_stream, sorting_center_
     estimated_delivery_time = value_data["estimated_delivery_time"]
     if estimated_delivery_time < event_time:
         logger.debug(
-            "late delivery package_id %r event_time %r expected_event_time %r diff %r",
+            "late delivery package_id %r expected %s late %s",
             package_id,
-            event_time,
-            estimated_delivery_time,
-            event_time - estimated_delivery_time,
+            datetime.datetime.fromtimestamp(estimated_delivery_time).strftime("%m-%d %H:%M"),
+            datetime.timedelta(seconds=event_time - estimated_delivery_time),
         )
         trouble_stream.noteTime(event_time)
         trouble_stream.writeEvent(
@@ -542,7 +563,7 @@ def main():
             redis=redis,
             maximum_event_count=args.maximum_event_count,
             wait_for_events=args.wait_for_events,
-            mark_event_index_frequency=args.mark_event_index_frequency
+            mark_event_index_frequency=args.mark_event_index_frequency,
         )
     elif all((args.sorting_center_code, args.scope, args.uri, args.package_id)):
         # test retrieving events for a single package
