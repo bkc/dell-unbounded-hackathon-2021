@@ -203,6 +203,8 @@ def process_sorting_center_events(
                             ),
                             uri=uri,
                             scope=scope,
+                            trouble_stream=trouble_stream,
+                            sorting_center_code=sorting_center_code,
                         ),
                         uri=uri,
                         scope=scope,
@@ -317,7 +319,7 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
 
         if redis.sadd(REDIS_LATE_PACKAGE_HASH_NAME, package_id):
             logger.warn(
-                "late package %r expected_event_time %r current_time %r diff %r",
+                "delayed package %r expected_event_time %r current_time %r diff %r",
                 package_id,
                 expected_event_time,
                 event_time,
@@ -325,11 +327,21 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
             )
 
             # write to trouble stream
-            # prepare to remove
-
+            stream.noteTime(event_time)  # this turned out to not be useful
+            stream.writeEvent(
+                sorting_center_code,
+                {
+                    "event_time": event_time,
+                    "event_type": "delayed_package",
+                    "package_id": package_id,
+                    "expected_event_time": expected_event_time,
+                    "sorting_center": sorting_center_code,
+                },
+            )
             packages_to_remove.append(package_id)
 
     if packages_to_remove:
+        # remove these packages from the 'late' list so they don't report over and over
         redis.zrem(REDIS_PACKAGE_NEXT_EVENT_KEY_NAME, packages_to_remove)
 
 
@@ -348,7 +360,9 @@ def save_streamcut_timestamps(input_event_stream):
         yield event_read
 
 
-def record_intake_and_weight_and_output(input_event_stream, uri, scope):
+def record_intake_and_weight_and_output(
+    input_event_stream, uri, scope, trouble_stream, sorting_center_code
+):
     """save attributes about the package in kvt table that is shared between sorting centers"""
     serializer = UTF8StringSerializer()  # cannot get kvt to work with JavaSerializer
     kvt_table_name = PACKAGE_ATTRIBUTES_KVT_NAME
@@ -381,6 +395,9 @@ def record_intake_and_weight_and_output(input_event_stream, uri, scope):
                         value_data["weight"] = event["weight"]
                     elif scanner_id == "output":
                         value_data["delivered_time"] = event["event_time"]
+                        report_late_delivery(
+                            package_id, value_data, trouble_stream, sorting_center_code
+                        )
                     else:
                         value_data["intake_time"] = event["event_time"]
                         value_data["destination"] = event["destination"]
@@ -392,6 +409,34 @@ def record_intake_and_weight_and_output(input_event_stream, uri, scope):
 
                     kvt_table.put(None, package_id, json.dumps(value_data)).join()
                     yield event
+
+
+def report_late_delivery(package_id, value_data, trouble_stream, sorting_center_code):
+    """if this package was delivered late, report it"""
+    if "estimated_delivery_time" not in value_data:
+        return
+
+    event_time = value_data["delivered_time"]
+    estimated_delivery_time = value_data["estimated_delivery_time"]
+    if estimated_delivery_time < event_time:
+        logger.debug(
+            "late delivery package_id %r event_time %r expected_event_time %r diff %r",
+            package_id,
+            event_time,
+            estimated_delivery_time,
+            event_time - estimated_delivery_time,
+        )
+        trouble_stream.noteTime(event_time)
+        trouble_stream.writeEvent(
+            sorting_center_code,
+            {
+                "event_time": event_time,
+                "event_type": "late_delivery",
+                "package_id": package_id,
+                "expected_event_time": estimated_delivery_time,
+                "sorting_center": sorting_center_code,
+            },
+        )
 
 
 def record_public_tracking_events(input_event_stream, uri, scope):
