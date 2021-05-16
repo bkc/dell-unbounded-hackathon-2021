@@ -309,8 +309,8 @@ class Simulator:
 
             travel_time = SECONDS_PER_HOUR * (whole + 1)
 
-        # and for just to be safe, add another 30 minutes
-        return travel_time + SECONDS_PER_MINUTE * 30
+        # and for just to be safe, add more time to travel estimate
+        return travel_time + SECONDS_PER_MINUTE * 90
 
     def generate_lost_or_delayed_packages(
         self, package_count, lost_package_count, delayed_package_count
@@ -329,7 +329,7 @@ class Simulator:
                 "delay": 2 * SECONDS_PER_HOUR,
                 "event_index": random.choice(
                     (3, 3, 3, 3, 1, 2, 4)
-                ),  # lose or delay most of them in routing
+                ),  # lose or delay most of them at routing scanner
             }
         logging.debug("delay map %r", result)
         return result
