@@ -11,7 +11,6 @@ import operator
 import time
 import datetime
 
-from io.pravega.client.stream.impl import JavaSerializer
 from io.pravega.client.stream.impl import UTF8StringSerializer
 
 from pravega_interface import (
@@ -45,7 +44,7 @@ from const import (
     REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME,
 )
 
-READ_TIMEOUT = 500
+READ_TIMEOUT = 2000
 
 
 cgitb.enable(format="text")
@@ -80,7 +79,7 @@ def iterable_stream(
                     logger.debug("all events have been read")
                     return
 
-            yield event
+            yield json.loads(event)
             have_read_an_event = True
 
 
@@ -88,7 +87,7 @@ def report_trouble_events(
     uri, scope, redis=None, wait_for_events=False,
 ):
     """process events from trouble stream"""
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     kvt_serializer = (
         UTF8StringSerializer()
     )  # cannot get kvt to work with JavaSerializer
@@ -96,52 +95,54 @@ def report_trouble_events(
     key_value_table_configuration = keyValueTableConfiguration()
     trouble_stream_name = TROUBLE_EVENT_STREAM_NAME
     stream_configuration = streamConfiguration(scaling_policy=1)
-    with streamManager(uri=uri) as stream_manager, keyValueTableManager(
-        uri
-    ) as kvt_manager:
-        created = kvt_manager.createKeyValueTable(
-            scope, package_attribute_kvt_table_name, key_value_table_configuration
-        )
-        logger.debug(
-            "kvt table %s/%s %s",
-            scope,
-            package_attribute_kvt_table_name,
-            "created" if created else "already exists",
-        )
-
-        created = stream_manager.createStream(
-            scope, trouble_stream_name, stream_configuration
-        )
-        logger.debug(
-            "stream %s/%s %s",
-            scope,
-            trouble_stream_name,
-            "created" if created else "already exists",
-        )
-        with keyValueTableFactory(uri, scope) as kvt_factory:
-            with keyValueTable(
-                kvt_factory,
+    with streamManager(uri=uri) as stream_manager:
+        stream_manager.createScope(scope)
+        with keyValueTableManager(uri) as kvt_manager:
+            created = kvt_manager.createKeyValueTable(
+                scope, package_attribute_kvt_table_name, key_value_table_configuration
+            )
+            logger.debug(
+                "kvt table %s/%s %s",
+                scope,
                 package_attribute_kvt_table_name,
-                kvt_serializer,
-                kvt_serializer,
-            ) as package_attribute_kvt_table:
-                logger.debug("begin reading from stream %r", trouble_stream_name)
-                input_event_stream = iterable_stream(
-                    uri,
-                    scope,
-                    trouble_stream_name,
-                    serializer,
-                    wait_for_events=wait_for_events,
-                )
+                "created" if created else "already exists",
+            )
 
-                # process all events by completely consuming the generator
-                for event in input_event_stream:
-                    package_id = event["package_id"]
-                    kvt_entry = package_attribute_kvt_table.get(None, package_id).join()
-                    package_attributes = (
-                        json.loads(kvt_entry.getValue()) if kvt_entry else {}
+            created = stream_manager.createStream(
+                scope, trouble_stream_name, stream_configuration
+            )
+            logger.debug(
+                "stream %s/%s %s",
+                scope,
+                trouble_stream_name,
+                "created" if created else "already exists",
+            )
+            with keyValueTableFactory(uri, scope) as kvt_factory:
+                with keyValueTable(
+                    kvt_factory,
+                    package_attribute_kvt_table_name,
+                    kvt_serializer,
+                    kvt_serializer,
+                ) as package_attribute_kvt_table:
+                    logger.debug("begin reading from stream %r", trouble_stream_name)
+                    input_event_stream = iterable_stream(
+                        uri,
+                        scope,
+                        trouble_stream_name,
+                        serializer,
+                        wait_for_events=wait_for_events,
                     )
-                    yield (event, package_attributes)
+
+                    # process all events by completely consuming the generator
+                    for event in input_event_stream:
+                        package_id = event["package_id"]
+                        kvt_entry = package_attribute_kvt_table.get(
+                            None, package_id
+                        ).join()
+                        package_attributes = (
+                            json.loads(kvt_entry.getValue()) if kvt_entry else {}
+                        )
+                        yield (event, package_attributes)
 
 
 def report_events(trouble_events):
@@ -151,19 +152,23 @@ def report_events(trouble_events):
         at_time = datetime.datetime.fromtimestamp(event["event_time"]).strftime(
             "%m-%d %H:%M"
         )
-        package_info = "pkg %-5.5s weight %-2.2s value $%s origin %s dest %s est_del %s" % (
-            event["package_id"],
-            package_attributes.get("weight", "?"),
-            package_attributes.get("declared_value", "?"),
-            package_attributes.get("origin"),
-            package_attributes.get("destination"),
-            datetime.datetime.fromtimestamp(
-                package_attributes["estimated_delivery_time"]
-            ).strftime("%m-%d %H:%M"),
+        package_info = (
+            "pkg %-5.5s weight %-2.2s value $%s origin %s dest %s est. del %s"
+            % (
+                event["package_id"],
+                package_attributes.get("weight", "?"),
+                package_attributes.get("declared_value", "?"),
+                package_attributes.get("origin"),
+                package_attributes.get("destination"),
+                datetime.datetime.fromtimestamp(
+                    package_attributes["estimated_delivery_time"]
+                ).strftime("%m-%d %H:%M"),
+            )
         )
         if event_type == "late_delivery":
-            logger.info(
-                "at %s late  %s", at_time, package_info)
+            logger.info("at %s late  %s", at_time, package_info)
+        elif event_type == "lost_package":
+            logger.info("at %s LOST  %s", at_time, package_info)
         elif event_type == "delayed_package":
             logger.info(
                 "at %s delay %s before %s",

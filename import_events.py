@@ -6,7 +6,8 @@ import json
 import logging
 import cgitb
 
-from io.pravega.client.stream.impl import JavaSerializer
+
+from io.pravega.client.stream.impl import UTF8StringSerializer
 
 from pravega_interface import (
     streamConfiguration,
@@ -25,7 +26,7 @@ cgitb.enable(format="text")
 
 def import_events(uri, scope, input_file):
     """import stream of events into per sorting-center streams"""
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     with streamManager(uri=uri) as stream_manager:
         stream_manager.createScope(scope)
         with eventStreamClientFactory(uri, scope) as event_stream_client_factory:
@@ -70,7 +71,7 @@ def import_events(uri, scope, input_file):
                         "package_id": "none",
                     }
                     stream = sorting_center_to_stream_map[sorting_center_code]
-                    stream.writeEvent(event["package_id"], event)
+                    stream.writeEvent(event["package_id"], json.dumps(event))
 
 
 def write_to_streams(input_file, sorting_center_to_stream_map):
@@ -86,7 +87,7 @@ def write_to_streams(input_file, sorting_center_to_stream_map):
         last_event_time = int(event["event_time"])
         stream.noteTime(last_event_time)  # this turned out to not be useful
         stream.writeEvent(
-            event["package_id"], event
+            event["package_id"], json.dumps(event)
         )  # this appears to serialize to a rather large amount of data
 
 

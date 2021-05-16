@@ -11,7 +11,6 @@ import operator
 import time
 import datetime
 
-from io.pravega.client.stream.impl import JavaSerializer
 from io.pravega.client.stream.impl import UTF8StringSerializer
 from io.pravega.client.stream import Stream
 
@@ -46,7 +45,7 @@ from const import (
     REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME,
 )
 
-READ_TIMEOUT = 500
+READ_TIMEOUT = 2000
 DELAYED_PACKAGE_EVENT_CHECK_FREQUENCY = (
     60  # how many seconds (simulated time) between checking for delayed events
 )
@@ -86,7 +85,7 @@ def iterable_stream(
                     logger.debug("all events have been read")
                     return
 
-            yield event
+            yield json.loads(event)
             have_read_an_event = True
 
 
@@ -98,12 +97,16 @@ def process_sorting_center_events(
     maximum_event_count=None,
     wait_for_events=False,
     mark_event_index_frequency=0,
+    report_lost_packages=False,
 ):
     """process events from stream"""
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     trouble_stream_name = TROUBLE_EVENT_STREAM_NAME
     stream_configuration = streamConfiguration(scaling_policy=1)
+    input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
+
     with streamManager(uri=uri) as stream_manager:
+        stream_manager.createScope(scope)
         created = stream_manager.createStream(
             scope, trouble_stream_name, stream_configuration
         )
@@ -113,13 +116,21 @@ def process_sorting_center_events(
             trouble_stream_name,
             "created" if created else "already exists",
         )
+        created = stream_manager.createStream(
+            scope, input_stream_name, stream_configuration
+        )
+        logging.debug(
+            "stream %s/%s %s",
+            scope,
+            input_stream_name,
+            "created" if created else "already exists",
+        )
         with eventStreamClientFactory(
             uri, scope
         ) as event_stream_client_factory, eventWriter(
             event_stream_client_factory, trouble_stream_name, serializer
         ) as trouble_stream:
             # input stream must already exist
-            input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
             logger.debug("begin reading from stream %r", input_stream_name)
             input_event_stream = iterable_stream(
                 uri,
@@ -164,7 +175,9 @@ def process_sorting_center_events(
                     logger.debug("%r", _)
             else:
                 # process all events by completely consuming the generator
-                for idx, _ in enumerate(pipeline):
+                for idx, event in enumerate(pipeline):
+                    if event.get("scanner_id") != "end-of-stream":
+                        event_time = event["event_time"]
                     if (
                         idx
                         and mark_event_index_frequency
@@ -172,10 +185,28 @@ def process_sorting_center_events(
                     ):
                         logger.debug("event # %d", idx)
 
-    if redis:
-        logger.debug("Lost packages: %r", redis.smembers(REDIS_LATE_PACKAGE_HASH_NAME))
+            if report_lost_packages and redis:
+                report_lost_packages_to_stream(trouble_stream, redis, event_time)
 
     return 0
+
+
+def report_lost_packages_to_stream(stream, redis, event_time):
+    """append lost package information to redis"""
+    for package_id in redis.smembers(REDIS_LATE_PACKAGE_HASH_NAME):
+        logger.debug("lost package %s", package_id)
+        # write to trouble stream
+        stream.noteTime(event_time)  # this turned out to not be useful
+        stream.writeEvent(
+            "A",
+            json.dumps(
+                {
+                    "event_time": event_time,
+                    "event_type": "lost_package",
+                    "package_id": package_id,
+                }
+            ),
+        )
 
 
 def update_next_event_time(input_event_stream, redis=None):
@@ -283,7 +314,7 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
                 redis.hget(REDIS_PACKAGE_NEXT_SCANNER_ID_KEY_NAME, package_id) or None
             )
             logger.warn(
-                "delayed package %r expected %r late %r at %r",
+                "delayed package %s expected %s late %s at %s",
                 package_id,
                 datetime.datetime.fromtimestamp(expected_event_time).strftime(
                     "%m-%d %H:%M"
@@ -296,14 +327,16 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
             stream.noteTime(event_time)  # this turned out to not be useful
             stream.writeEvent(
                 sorting_center_code,
-                {
-                    "event_time": event_time,
-                    "event_type": "delayed_package",
-                    "package_id": package_id,
-                    "expected_event_time": expected_event_time,
-                    "sorting_center": sorting_center_code,
-                    "next_scanner_id": next_scanner_id,
-                },
+                json.dumps(
+                    {
+                        "event_time": event_time,
+                        "event_type": "delayed_package",
+                        "package_id": package_id,
+                        "expected_event_time": expected_event_time,
+                        "sorting_center": sorting_center_code,
+                        "next_scanner_id": next_scanner_id,
+                    }
+                ),
             )
             packages_to_remove.append(package_id)
 
@@ -387,7 +420,7 @@ def report_late_delivery(package_id, value_data, trouble_stream, sorting_center_
     estimated_delivery_time = value_data["estimated_delivery_time"]
     if estimated_delivery_time < event_time:
         logger.debug(
-            "late delivery package_id %r expected %s late %s",
+            "late delivery package_id %s expected %s late %s",
             package_id,
             datetime.datetime.fromtimestamp(estimated_delivery_time).strftime(
                 "%m-%d %H:%M"
@@ -397,13 +430,15 @@ def report_late_delivery(package_id, value_data, trouble_stream, sorting_center_
         trouble_stream.noteTime(event_time)
         trouble_stream.writeEvent(
             sorting_center_code,
-            {
-                "event_time": event_time,
-                "event_type": "late_delivery",
-                "package_id": package_id,
-                "expected_event_time": estimated_delivery_time,
-                "sorting_center": sorting_center_code,
-            },
+            json.dumps(
+                {
+                    "event_time": event_time,
+                    "event_type": "late_delivery",
+                    "package_id": package_id,
+                    "expected_event_time": estimated_delivery_time,
+                    "sorting_center": sorting_center_code,
+                }
+            ),
         )
 
 
@@ -465,7 +500,7 @@ def extract_sorting_center_events_by_package_id(
     # find initial import timestamp for this sorting center, then configure
     # this ReaderGroup to start at that StreamCut
 
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     with streamManager(uri=uri) as stream_manager:
         # input stream must already exist
         input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
@@ -534,6 +569,13 @@ def get_argument_parser():
     )
 
     parser.add_argument(
+        "--report_lost_packages",
+        help="choose this sorting center process to report lost packages to trouble stream",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
         "-w",
         "--wait_for_events",
         help="wait for at least one event before exiting",
@@ -568,6 +610,7 @@ def main():
             maximum_event_count=args.maximum_event_count,
             wait_for_events=args.wait_for_events,
             mark_event_index_frequency=args.mark_event_index_frequency,
+            report_lost_packages=args.report_lost_packages,
         )
     elif all((args.sorting_center_code, args.scope, args.uri, args.package_id)):
         # test retrieving events for a single package
