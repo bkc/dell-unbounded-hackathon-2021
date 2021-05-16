@@ -249,7 +249,7 @@ class Simulator:
         # add truck travel time
         receiving_event_time += truck_travel_time * SECONDS_PER_MINUTE
 
-        # emit arriving at holding
+        # emit arriving at holding area
         result = {
             "sorting_center": origin,
             "event_time": int(event_time),
@@ -257,6 +257,7 @@ class Simulator:
             "scanner_id": current_scanner,
             "next_scanner_id": "receiving",
             "next_event_time": int(receiving_event_time),
+            "next_sorting_center": destination,
         }
 
         yield result
@@ -309,8 +310,8 @@ class Simulator:
 
             travel_time = SECONDS_PER_HOUR * (whole + 1)
 
-        # and for just to be safe, add another 30 minutes
-        return travel_time + SECONDS_PER_MINUTE * 30
+        # and for just to be safe, add more time to travel estimate
+        return travel_time + SECONDS_PER_MINUTE * 90
 
     def generate_lost_or_delayed_packages(
         self, package_count, lost_package_count, delayed_package_count
@@ -329,7 +330,7 @@ class Simulator:
                 "delay": 2 * SECONDS_PER_HOUR,
                 "event_index": random.choice(
                     (3, 3, 3, 3, 1, 2, 4)
-                ),  # lose or delay most of them in routing
+                ),  # lose or delay most of them at routing scanner
             }
         logging.debug("delay map %r", result)
         return result
