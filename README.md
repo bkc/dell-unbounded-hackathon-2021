@@ -183,14 +183,23 @@ $ env CLASSPATH=/path-to-client-jars/pravega-client-0.9.0/\* jython kvt_test.py 
 
 Writes both key and value as strings. Unfortunately I could not get this to work using JavaSerializer for either key or value
 
+Then read the value back from the kvt:
+
 ```shell
 $ env CLASSPATH=/path-to-client-jars/pravega-client-0.9.0/\* jython kvt_test.py -l debug -u tcp://192.162.108.4:9090 --scope test --table_name test --key test 
 2021-05-15 11:34:59,822 root         DEBUG    kvt table test/test already exists
 u'1'
 ```
 
-read the value back
 
+
+## pravega_util - remove streams and tables from scope
+
+To delete all kvt and streams from a scope
+
+```shell
+$ env CLASSPATH=(pwd)/jar/\*:/home/bkc/src/3rdParty/pravega-client-0.9.0/\* jython pravega_util.py -u  tcp://192.168.198.4:9090 --scope test -l debug -p
+```
 
 
 # Dependencies
