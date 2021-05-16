@@ -205,6 +205,9 @@ def process_sorting_center_events(
                 if idx and not (idx % 100):
                     logger.debug("event # %d", idx)
 
+    if redis:
+        logger.debug("Lost packages: %r", redis.smembers(REDIS_LATE_PACKAGE_HASH_NAME))
+        
     return 0
 
 
