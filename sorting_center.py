@@ -285,7 +285,9 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
             logger.warn(
                 "delayed package %r expected %r late %r at %r",
                 package_id,
-                datetime.datetime.fromtimestamp(expected_event_time).strftime("%m-%d %H:%M"),
+                datetime.datetime.fromtimestamp(expected_event_time).strftime(
+                    "%m-%d %H:%M"
+                ),
                 datetime.timedelta(seconds=event_time - expected_event_time),
                 next_scanner_id,
             )
@@ -387,7 +389,9 @@ def report_late_delivery(package_id, value_data, trouble_stream, sorting_center_
         logger.debug(
             "late delivery package_id %r expected %s late %s",
             package_id,
-            datetime.datetime.fromtimestamp(estimated_delivery_time).strftime("%m-%d %H:%M"),
+            datetime.datetime.fromtimestamp(estimated_delivery_time).strftime(
+                "%m-%d %H:%M"
+            ),
             datetime.timedelta(seconds=event_time - estimated_delivery_time),
         )
         trouble_stream.noteTime(event_time)
