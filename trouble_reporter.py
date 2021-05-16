@@ -11,7 +11,6 @@ import operator
 import time
 import datetime
 
-from io.pravega.client.stream.impl import JavaSerializer
 from io.pravega.client.stream.impl import UTF8StringSerializer
 
 from pravega_interface import (
@@ -80,7 +79,7 @@ def iterable_stream(
                     logger.debug("all events have been read")
                     return
 
-            yield event
+            yield json.loads(event)
             have_read_an_event = True
 
 
@@ -88,7 +87,7 @@ def report_trouble_events(
     uri, scope, redis=None, wait_for_events=False,
 ):
     """process events from trouble stream"""
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     kvt_serializer = (
         UTF8StringSerializer()
     )  # cannot get kvt to work with JavaSerializer

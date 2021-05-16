@@ -11,7 +11,6 @@ import operator
 import time
 import datetime
 
-from io.pravega.client.stream.impl import JavaSerializer
 from io.pravega.client.stream.impl import UTF8StringSerializer
 from io.pravega.client.stream import Stream
 
@@ -86,7 +85,7 @@ def iterable_stream(
                     logger.debug("all events have been read")
                     return
 
-            yield event
+            yield json.loads(event)
             have_read_an_event = True
 
 
@@ -101,7 +100,7 @@ def process_sorting_center_events(
     report_lost_packages=False,
 ):
     """process events from stream"""
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     trouble_stream_name = TROUBLE_EVENT_STREAM_NAME
     stream_configuration = streamConfiguration(scaling_policy=1)
     input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
@@ -200,11 +199,13 @@ def report_lost_packages_to_stream(stream, redis, event_time):
         stream.noteTime(event_time)  # this turned out to not be useful
         stream.writeEvent(
             "A",
-            {
-                "event_time": event_time,
-                "event_type": "lost_package",
-                "package_id": package_id,
-            },
+            json.dumps(
+                {
+                    "event_time": event_time,
+                    "event_type": "lost_package",
+                    "package_id": package_id,
+                }
+            ),
         )
 
 
@@ -326,14 +327,16 @@ def report_delayed_packages(redis, stream, event_time, sorting_center_code):
             stream.noteTime(event_time)  # this turned out to not be useful
             stream.writeEvent(
                 sorting_center_code,
-                {
-                    "event_time": event_time,
-                    "event_type": "delayed_package",
-                    "package_id": package_id,
-                    "expected_event_time": expected_event_time,
-                    "sorting_center": sorting_center_code,
-                    "next_scanner_id": next_scanner_id,
-                },
+                json.dumps(
+                    {
+                        "event_time": event_time,
+                        "event_type": "delayed_package",
+                        "package_id": package_id,
+                        "expected_event_time": expected_event_time,
+                        "sorting_center": sorting_center_code,
+                        "next_scanner_id": next_scanner_id,
+                    }
+                ),
             )
             packages_to_remove.append(package_id)
 
@@ -427,13 +430,15 @@ def report_late_delivery(package_id, value_data, trouble_stream, sorting_center_
         trouble_stream.noteTime(event_time)
         trouble_stream.writeEvent(
             sorting_center_code,
-            {
-                "event_time": event_time,
-                "event_type": "late_delivery",
-                "package_id": package_id,
-                "expected_event_time": estimated_delivery_time,
-                "sorting_center": sorting_center_code,
-            },
+            json.dumps(
+                {
+                    "event_time": event_time,
+                    "event_type": "late_delivery",
+                    "package_id": package_id,
+                    "expected_event_time": estimated_delivery_time,
+                    "sorting_center": sorting_center_code,
+                }
+            ),
         )
 
 
@@ -495,7 +500,7 @@ def extract_sorting_center_events_by_package_id(
     # find initial import timestamp for this sorting center, then configure
     # this ReaderGroup to start at that StreamCut
 
-    serializer = JavaSerializer()
+    serializer = UTF8StringSerializer()
     with streamManager(uri=uri) as stream_manager:
         # input stream must already exist
         input_stream_name = SORTING_CENTER_TO_STREAM_NAME[sorting_center_code]
