@@ -11,7 +11,7 @@ from pravega_interface import (
     keyValueTableManager,
 )
 
-from const import REDIS_PACKAGE_NEXT_EVENT_KEY_NAME
+from const import ALL_REDIS_KEYS
 
 from util import setup_logging, add_logging_argument
 from redis_util import add_redis_argparse_argument, get_redis_server_from_options
@@ -66,7 +66,7 @@ def purge_scope(uri, scope):
 
 def purge_redis(redis):
     """clear redis data structures"""
-    for redis_key_name in (REDIS_PACKAGE_NEXT_EVENT_KEY_NAME,):
+    for redis_key_name in ALL_REDIS_KEYS:
         redis.del(redis_key_name)
         logging.debug("deleted key %r from redis", redis_key_name)
 
