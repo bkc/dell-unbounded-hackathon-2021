@@ -10,7 +10,7 @@ The IT department at SGF has been assigned the task of finding a way to alert so
 
 ## Package processing flow
 
-When customers drop their packages off at any of the four SGF sorting centers they declare the value of their packages. SGF applies a barcode and the package is scanned by the `intake` scanner. The package travels to a weighing station, where it is weighed and scanned again. After weighing, the package travels through pre-routing and routing scanners.  If the package will be delivered to a local destination, it is sent to the output area where it undergoes its final `delivery` scan. Otherwise the package is routed to one of three other holding areas before being placed onto a truck for transportation to the destination sorting center.
+When customers drop their packages off at any of the four SGF sorting centers they declare the value of their packages. SGF applies a barcode and the package is scanned by an `intake` scanner. The package travels to a weighing station, where it is weighed and scanned again. After weighing, the package travels through pre-routing and routing scanners.  If the package will be delivered to a local destination, it is sent to the output area where it undergoes its final `delivery` scan. Otherwise the package is routed to one of three other holding areas before being placed onto a truck for transportation to the destination sorting center.
 
 <img src="assets/sgf-overview-diagram.png" alt="sgf-overview-diagram" style="zoom:33%;" />
 
@@ -111,7 +111,7 @@ An overview of the solution architecture is shown below.
 * Per-sorting center processes read the tail of the input stream to detect various conditions are previously described
 * A Redis sorted set keeps track of next expected scanning event. 
 * When a scanning event is missed, a delivery is late or a package is lost, an event is written to the trouble stream
-* The Trouble Reporter process tails the trouble stream. It hydrates trouble events with additional information from the package attribute key-value table before passing the events on to users
+* The Trouble Reporter process tails the trouble stream. It hydrates trouble events with additional information from the package attribute key-value table before passing the trouble event on to users
 
 <img src="assets/sgf-arch-diagram.png" alt="sgf-arch-diagram" style="zoom:33%;" />
 
