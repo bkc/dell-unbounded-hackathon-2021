@@ -193,12 +193,12 @@ u'1'
 
 
 
-## pravega_util - remove streams and tables from scope
+## pravega_util - remove streams and tables from scope, delete keys from redis
 
-To delete all kvt and streams from a scope
+To delete all kvt and streams from a scope and also delete keys from redis:
 
 ```shell
-$ env CLASSPATH=(pwd)/jar/\*:/home/bkc/src/3rdParty/pravega-client-0.9.0/\* jython pravega_util.py -u  tcp://192.168.198.4:9090 --scope test -l debug -p
+$ env CLASSPATH=(pwd)/jar/\*:/home/bkc/src/3rdParty/pravega-client-0.9.0/\* jython pravega_util.py -u  tcp://192.168.198.4:9090 -l debug --purge_redis --rs localhost --purge_scope --scope test 
 ```
 
 
