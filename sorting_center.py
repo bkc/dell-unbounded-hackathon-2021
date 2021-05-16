@@ -1,7 +1,5 @@
 """sorting_center - process all tracking events for an individual sorting center"""
 
-"""import_events - import events from json file into pravega"""
-
 import sys
 import argparse
 import json
@@ -58,62 +56,6 @@ cgitb.enable(format="text")
 logger = None
 
 
-def import_events(uri, scope, input_file):
-    """import stream of events into per sorting-center streams"""
-    serializer = JavaSerializer()
-    with streamManager(uri=uri) as stream_manager, eventStreamClientFactory(
-        uri, scope
-    ) as event_stream_client_factory:
-        # ensure destination streams have already been created
-        create_streams(stream_manager, scope)
-        # ugly python to get context manager to work properly
-        # since contextlib.nested is deprecated
-        with eventWriter(
-            event_stream_client_factory, SORTING_CENTER_TO_STREAM_NAME["A"], serializer
-        ) as stream_A, eventWriter(
-            event_stream_client_factory, SORTING_CENTER_TO_STREAM_NAME["B"], serializer
-        ) as stream_B, eventWriter(
-            event_stream_client_factory, SORTING_CENTER_TO_STREAM_NAME["C"], serializer
-        ) as stream_C, eventWriter(
-            event_stream_client_factory, SORTING_CENTER_TO_STREAM_NAME["D"], serializer
-        ) as stream_D:
-            sorting_center_to_stream_map = {
-                "A": stream_A,
-                "B": stream_B,
-                "C": stream_C,
-                "D": stream_D,
-            }
-            write_to_streams(input_file, sorting_center_to_stream_map)
-
-
-def write_to_streams(input_file, sorting_center_to_stream_map):
-    """parse json input file line-by-line, route to correct stream"""
-    while 1:
-        line = input_file.readline()
-        if not line:
-            return
-
-        event = json.loads(line)
-        stream = sorting_center_to_stream_map[event["sorting_center"]]
-        stream.noteTime(int(event["event_time"]))
-        stream.writeEvent(
-            event["package_id"], event
-        )  # this appears to serialize to a rather large amount of data
-
-
-def create_streams(stream_manager, scope):
-    """create input streams as needed"""
-    stream_configuration = streamConfiguration(
-        scaling_policy=1
-    )  # might need to use different policy
-    for stream_name in SORTING_CENTER_TO_STREAM_NAME.values():
-        created = stream_manager.createStream(scope, stream_name, stream_configuration)
-        logger.debug(
-            "stream %s/%s %s",
-            scope,
-            stream_name,
-            "created" if created else "already exists",
-        )
 
 
 def iterable_stream(
@@ -155,6 +97,7 @@ def process_sorting_center_events(
     redis=None,
     maximum_event_count=None,
     wait_for_events=False,
+    mark_event_index_frequency=0,
 ):
     """process events from stream"""
     serializer = JavaSerializer()
@@ -222,7 +165,7 @@ def process_sorting_center_events(
             else:
                 # process all events by completely consuming the generator
                 for idx, _ in enumerate(pipeline):
-                    if idx and not (idx % 100):
+                    if idx and mark_event_index_frequency and not (idx % mark_event_index_frequency):
                         logger.debug("event # %d", idx)
 
     if redis:
@@ -552,6 +495,12 @@ def get_argument_parser():
     )
 
     parser.add_argument(
+        "--mark_event_index_frequency",
+        type=int,
+        help="write a debug statement every X events",
+        default=0,
+    )
+    parser.add_argument(
         "-r",
         "--run",
         help="run sorting center process",
@@ -593,6 +542,7 @@ def main():
             redis=redis,
             maximum_event_count=args.maximum_event_count,
             wait_for_events=args.wait_for_events,
+            mark_event_index_frequency=args.mark_event_index_frequency
         )
     elif all((args.sorting_center_code, args.scope, args.uri, args.package_id)):
         # test retrieving events for a single package
